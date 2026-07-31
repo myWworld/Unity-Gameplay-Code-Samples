@@ -6,7 +6,6 @@
 2. [`StructuralIntegritySolver.cs`](../Samples/RuntimeBuildingSystem/Source/StructuralIntegrity/StructuralIntegritySolver.cs)에서 `PredictSupportValue`, `HandleMaterialPlacement`, `HandleMaterialPropagate`, `UpdateParentsAndChildren`을 확인합니다.
 3. [`UtilitySelectorNode.cs`](../Samples/BehaviorTreeUtilityAI/Source/Composite/UtilitySelectorNode.cs)에서 재평가 Timer, `CanInterrupt()`, `inertiaBonus`, 최댓값 선택을 확인합니다.
 4. [`BossSweepDamager.cs`](../Samples/BossCombatFramework/Source/HitDetection/BossSweepDamager.cs)에서 이전-현재 위치 SphereCast와 인접 세그먼트 Capsule Overlap을 확인합니다.
-5. 실행 환경이 필요한 경우가 아니라면 의존성 설치를 시도하지 말고 [`DEPENDENCIES.md`](DEPENDENCIES.md)의 공개 경계를 확인합니다.
 
 ## 15~30분 상세 검토 경로
 
