@@ -50,26 +50,6 @@
 2. [`UtilitySelectorNode.cs`](Samples/BehaviorTreeUtilityAI/Source/Composite/UtilitySelectorNode.cs) — 재평가 주기, 인터럽트 가능 여부, 관성 보너스를 이용한 행동 전환 안정화
 3. [`BossSweepDamager.cs`](Samples/BossCombatFramework/Source/HitDetection/BossSweepDamager.cs) — 빠른 골격 애니메이션에서도 공격 궤적의 빈 공간을 줄이는 연속 충돌 판정
 
-## 클론 후 확인
-
-코드 열람에는 Unity 설치나 외부 패키지 설치가 필요하지 않습니다. 공개한 GitHub 저장소를 클론한 뒤 다음 명령만 실행하면 문서와 소스 스냅샷의 상태를 확인할 수 있습니다.
-
-```bash
-git clone <repository-url>
-cd Unity-Gameplay-Code-Samples
-python tools/verify_repository.py
-```
-
-이미 클론한 폴더 안에 있다면 마지막 명령만 실행하면 됩니다. 검증 도구는 Python 표준 라이브러리만 사용합니다.
-
-Windows에서 `python` 명령이 연결되지 않은 경우 다음 명령을 사용할 수 있습니다.
-
-```powershell
-py tools\verify_repository.py
-```
-
-검증 항목은 필수 문서, UTF-8 인코딩, 깨진 문자, 동일 C# 파일 중복, 생성 폴더 혼입, 로컬 Markdown 링크입니다.
-
 ## 실행 및 컴파일 범위
 
 이 저장소는 **소스 리뷰용 스냅샷**이며 독립 실행 가능한 Unity 프로젝트 또는 재사용 패키지가 아닙니다. 공개 코드가 참조하는 프로젝트 전용 타입과 유료/외부 패키지는 의도적으로 배포하지 않습니다. 어떤 요소가 빠져 있는지와 그 이유는 [`docs/PUBLIC_SNAPSHOT.md`](docs/PUBLIC_SNAPSHOT.md), 참조 관계는 [`docs/DEPENDENCIES.md`](docs/DEPENDENCIES.md)를 확인해 주세요.
