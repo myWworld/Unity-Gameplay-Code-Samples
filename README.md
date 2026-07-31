@@ -23,7 +23,6 @@
 ```text
 .
 ├─ README.md
-├─ README.en.md
 ├─ LICENSE
 ├─ NOTICE.md
 ├─ Samples/
@@ -39,5 +38,4 @@
 └─ docs/
    ├─ ARCHITECTURE.md
    ├─ DEPENDENCIES.md
-   ├─ PUBLIC_SNAPSHOT.md
    └─ REVIEW_GUIDE.md
