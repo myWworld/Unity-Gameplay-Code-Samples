@@ -1,7 +1,5 @@
 # Unity Gameplay Code Samples
 
-[English README](README.en.md)
-
 > **상태:** 개발 진행 중 · 부분 공개 소스 스냅샷 · 코드 리뷰용 저장소
 
 이 저장소는 개발 중인 **3D 오픈월드 액션 RPG**에서 직접 설계하고 구현한 Unity C# 코드 중, 기술 검토에 필요한 일부를 선별하여 공개한 포트폴리오 저장소입니다.
