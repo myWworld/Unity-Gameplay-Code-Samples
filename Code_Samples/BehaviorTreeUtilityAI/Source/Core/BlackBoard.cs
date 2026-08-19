@@ -33,6 +33,11 @@ public class BlackBoard : MonoBehaviour
     {
         return floatData.TryGetValue(GetKeyHash(key), out float value) ? value : defaultValue;
     }
+
+    public float GetFloat(BlackboardKey key, float defaultValue = 0f)
+    {
+        return floatData.TryGetValue(key.keyHash, out float value) ? value : defaultValue;
+    }
     #endregion
 
     #region Int
@@ -45,6 +50,11 @@ public class BlackBoard : MonoBehaviour
     {
         return intData.TryGetValue(GetKeyHash(key), out int value) ? value : defaultValue;
     }
+
+    public int GetInt(BlackboardKey key, int defaultValue = 0)
+    {
+        return intData.TryGetValue(key.keyHash, out int value) ? value : defaultValue;
+    }
     #endregion
 
     #region Bool
@@ -56,6 +66,11 @@ public class BlackBoard : MonoBehaviour
     public bool GetBool(string key, bool defaultValue = false)
     {
         return boolData.TryGetValue(GetKeyHash(key), out bool value) ? value : defaultValue;
+    }
+
+    public bool GetBool(BlackboardKey key, bool defaultValue = false)
+    {
+        return boolData.TryGetValue(key.keyHash, out bool value) ? value : defaultValue;
     }
     #endregion
 
@@ -71,6 +86,11 @@ public class BlackBoard : MonoBehaviour
     {
         Vector3 defaultValue = Vector3.zero;
         return vectorData.TryGetValue(GetKeyHash(key), out Vector3 value) ? value : defaultValue;
+    }
+
+    public Vector3 GetVector3(BlackboardKey key)
+    {
+        return vectorData.TryGetValue(key.keyHash, out Vector3 value) ? value : Vector3.zero;
     }
 
     #endregion
@@ -90,6 +110,15 @@ public class BlackBoard : MonoBehaviour
     public T GetObject<T>(string key) where T : class
     {
         if (objectData.TryGetValue(GetKeyHash(key), out object value))
+        {
+            return value as T;
+        }
+        return null;
+    }
+
+    public T GetObject<T>(BlackboardKey key) where T : class
+    {
+        if (objectData.TryGetValue(key.keyHash, out object value))
         {
             return value as T;
         }
