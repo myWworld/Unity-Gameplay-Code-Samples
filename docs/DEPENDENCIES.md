@@ -32,7 +32,6 @@
 
 - `BuildingMaterialManagement`: 자재 Object Pool, Collider/Layer 활성화, 지면 접촉 검사, 파괴 처리
 - `BuildingColliderUtility`: Proxy Collider에서 실제 `IMaterial` Root 탐색
-- `BuildingRemoveState`: 철거 입력 상태
 - `PartialNavMeshBuilder`: 설치 위치 주변 NavMesh의 국소 갱신
 - `RuntimePlacedBuildingMarker`: 런타임 설치 오브젝트 표시
 - `RuntimeCursorController`: 건축 상태별 Cursor 표시 요청 관리
