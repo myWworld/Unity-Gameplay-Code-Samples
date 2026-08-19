@@ -55,17 +55,17 @@ public abstract class TenTacleChild : MonoBehaviour
         if (mAnimal != null)
         {
             mAnimal.OnModeEnd.AddListener(OnMalbersModeEnded);
-            mAnimal.OnStateChange.AddListener((stateID) =>
-            {
-                UnityEngine.Debug.Log($"[{gameObject.name}] 상태 변경됨! 새로운 State ID: {stateID}");
-            });
+            //mAnimal.OnStateChange.AddListener((stateID) =>
+            //{
+            //    //UnityEngine.Debug.Log($"[{gameObject.name}] 상태 변경됨! 새로운 State ID: {stateID}");
+            //});
         }
         StartCoroutine(DelayedReset());
     }
 
     private void OnDisable()
     {
-        UnityEngine.Debug.Log($"[{gameObject.name}] 풀로 돌아감 - 논리 상태 초기화");
+        //UnityEngine.Debug.Log($"[{gameObject.name}] 풀로 돌아감 - 논리 상태 초기화");
         if (mAnimal != null) mAnimal.OnModeEnd.RemoveListener(OnMalbersModeEnded);
         StopAllCoroutines();
 
@@ -106,7 +106,7 @@ public abstract class TenTacleChild : MonoBehaviour
     }
     protected virtual void ResetTentacle()
     {
-        UnityEngine.Debug.Log("Tentacle removed");
+      //  UnityEngine.Debug.Log("Tentacle removed");
 
         if (hpStat != null)
         {
@@ -186,10 +186,6 @@ public abstract class TenTacleChild : MonoBehaviour
         {
             bool isSuccess = mAnimal.Mode_TryActivate(modeID, abilityID);
 
-            UnityEngine.Debug.LogWarning($"<color=yellow>[촉수 검사]</color> " +
-                $"공격 활성화 결과: <b>{isSuccess}</b> | " +
-                $"말버스가 인지한 땅 착지 여부(Grounded): <b>{mAnimal.Grounded}</b> | " +
-                $"현재 상태 ID: <b>{mAnimal.ActiveStateID}</b>");
         }
     }
 

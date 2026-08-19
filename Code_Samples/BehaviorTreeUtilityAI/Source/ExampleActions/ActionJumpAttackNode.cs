@@ -89,7 +89,7 @@ public class ActionJumpAttackNode : ActionPlayMode
         targetLandingPos.y -= 0.5f;
 
 
-        UnityEngine.Debug.Log($"[ActionJumpAttackNode] jump Durtaion : {jumpDuration}");
+      //  UnityEngine.Debug.Log($"[ActionJumpAttackNode] jump Durtaion : {jumpDuration}");
 
         isLanded = false;
 
@@ -201,7 +201,7 @@ public class ActionJumpAttackNode : ActionPlayMode
         animator.speed = originalAnimSpeed; // 애니메이터 속도 복구
         base.OnStop();
 
-        UnityEngine.Debug.Log($"[ActionJumpAttackNode] ActionJumpAttackNode Stop");
+        //UnityEngine.Debug.Log($"[ActionJumpAttackNode] ActionJumpAttackNode Stop");
         blackBoard.OnActionCancel -= JumpStop;
 
         // 7. 상태 복구

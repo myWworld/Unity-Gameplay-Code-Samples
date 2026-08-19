@@ -37,27 +37,15 @@ public class GrabTentacleChild : TenTacleChild
     }
 
 
-    public void AE_ThrowPlayer()
+    public void AE_ThrowPlayer(int DamageOn)
     {
         var grabbedTarget = grabManager.CurrentTarget;
+        bool damage = DamageOn == 1 ? true : false;
 
         if (grabbedTarget != null)
         {
             Vector3 throwDir = (transform.forward + (Vector3.up * 0.5f)).normalized;
-            grabbedTarget.OnThrown(throwDir, currentThrowPower, true);
-        }
-
-        grabManager.ReleaseGrab();
-    }
-
-    public void AE_ThrowPlayerNoDamage()
-    {
-        var grabbedTarget = grabManager.CurrentTarget;
-
-        if (grabbedTarget != null)
-        {
-            Vector3 throwDir = (transform.forward + (Vector3.up * 0.5f)).normalized;
-            grabbedTarget.OnThrown(throwDir, currentThrowPower, false);
+            grabbedTarget.OnThrown(throwDir, currentThrowPower, damage);
         }
 
         grabManager.ReleaseGrab();

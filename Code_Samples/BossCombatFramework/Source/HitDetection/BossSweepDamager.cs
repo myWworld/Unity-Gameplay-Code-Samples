@@ -14,7 +14,7 @@ public class BossSweepDamager : MAttackTrigger
     public Transform hitboxTip;
     public float hitRadius = 0.5f;
     [Range(3, 20)] public int segments = 5;
-    private int CenterSegmentIndex => segments / 2; // Index of the center sample segment.
+    private int CenterSegmentIndex => segments / 2; 
     public Transform scaleUpBone;
 
     private Vector3[] lastPositions;
@@ -38,7 +38,7 @@ public class BossSweepDamager : MAttackTrigger
         base.OnEnable();
         alreadyHit.Clear();
         timeSinceLastHit = Time.time;
-     //   UnityEngine.Debug.Log($"<color=green>[Sweep] SweepDamager Enabled: {gameObject.name}</color>");
+
 
         if (hitboxBase != null && hitboxTip != null)
         {
@@ -54,33 +54,17 @@ public class BossSweepDamager : MAttackTrigger
 
     protected override void OnDisable()
     {
-        timeSinceLastHit -= Time.time;
-    //    UnityEngine.Debug.Log($"<color=green>[Sweep] SweepDamager Disnabled: {timeSinceLastHit}</color>");
-    // The damage window is controlled by animation events through DoDamage().
+
         timeSinceLastHit = 0f;
         base.OnDisable();
     }
 
-    public override void DoDamage(bool value, int profile)
-    {
-        // Preserve the base trigger behavior while exposing animation-event diagnostics.
-        if (value == false)
-        {
-            UnityEngine.Debug.Log("[Sweep] Damage window disabled.");
-        }
-        else
-        {
-            UnityEngine.Debug.Log($"[Sweep] Damage window enabled. Profile ID: {ID}");
-        }
-
-        base.DoDamage(value, profile);
-    }
 
     void LateUpdate()
     {
         if (!enabled) return;
 
-        float currentThicknessMultiplier = scaleUpBone != null ? Mathf.Max(scaleUpBone.lossyScale.x, scaleUpBone.lossyScale.z) : 1f;
+        float currentThicknessMultiplier = scaleUpBone != null ? Mathf.Max(scaleUpBone.lossyScale.x, scaleUpBone.lossyScale.z) : 1f;// 적용하고 싶은 스케일만큼 범위 변경
         float currentHitRadius = hitRadius * currentThicknessMultiplier;
 
         for (int i = 0; i < segments; i++)
@@ -88,39 +72,32 @@ public class BossSweepDamager : MAttackTrigger
             Vector3 currentPos = GetSegmentPosition(i);
             Vector3 lastPos = lastPositions[i];
 
-            // ---------------------------------------------------------
-            // Temporal sweep: cast each segment from its previous position to its current position.
-            // This closes gaps caused by fast bone motion between frames.
-            // ---------------------------------------------------------
-            Vector3 moveDirection = currentPos - lastPos;
-            float moveDistance = moveDirection.magnitude;
+  
+            Vector3 moveDirection = currentPos - lastPos;//직전 위치와 현재위치를 이용해 이동 방향 계산 
+            float moveDistance = moveDirection.magnitude; //이동거리 계산
 
             if (moveDistance > 0.001f)
             {
-                int castCount = Physics.SphereCastNonAlloc(lastPos, currentHitRadius, moveDirection.normalized, castResults, moveDistance, Layer, TriggerInteraction);
+                int castCount = Physics.SphereCastNonAlloc(lastPos, currentHitRadius, moveDirection.normalized, castResults, moveDistance, Layer, TriggerInteraction); //이동 궤적 사이에 있는지 시간적인 관점에서 체크
                 for (int j = 0; j < castCount; j++)
                 {
                     ProcessSingleHit(castResults[j].collider, castResults[j].point);
                 }
             }
 
-            // ---------------------------------------------------------
-            // Spatial fill: overlap capsules between adjacent segments.
-            // This closes gaps along the current curved hitbox.
-            // ---------------------------------------------------------
             if (i < segments - 1)
             {
                 Vector3 nextPos = GetSegmentPosition(i + 1);
-                int overlapCount = Physics.OverlapCapsuleNonAlloc(currentPos, nextPos, currentHitRadius, overlapResults, Layer, TriggerInteraction);
+                int overlapCount = Physics.OverlapCapsuleNonAlloc(currentPos, nextPos, currentHitRadius, overlapResults, Layer, TriggerInteraction); //팔 범위에 속하는지 공간적인 관점에서도 체크
 
                 for (int j = 0; j < overlapCount; j++)
                 {
-                    // Use the midpoint of the adjacent segment pair as an approximate contact point.
+  
                     ProcessSingleHit(overlapResults[j], Vector3.Lerp(currentPos, nextPos, 0.5f));
                 }
             }
 
-            // Store the current sample position for the next frame.
+      
             lastPositions[i] = currentPos;
         }
     }
@@ -128,23 +105,21 @@ public class BossSweepDamager : MAttackTrigger
 
     private void ProcessSingleHit(Collider other, Vector3 hitPoint)
     {
-     //   Debug.Log($"<color=orange>[Sweep] Hit Detected: {other.name}</color>");
+ 
 
         if (other == null) return;
         if (alreadyHit.Contains(other)) return;
-        if (dontHitOwner && Owner != null && other.transform.IsChildOf(Owner.transform)) return;
+        if (dontHitOwner && Owner != null && other.transform.IsChildOf(Owner.transform)) return; //떄리면 안되느 대상 or 이미 때린 대상 제외
 
         if (Tags != null && Tags.Length > 0)
         {
-            if (!other.gameObject.HasMalbersTagInParent(Tags)) return;
+            if (!other.gameObject.HasMalbersTagInParent(Tags)) return; //타겟 태그인가
         }
 
         alreadyHit.Add(other);
 
         if (!AttackDirection) Direction = Owner.transform.forward;
         else Direction = (other.bounds.center - hitboxBase.position).normalized;
-
-      //  if (MissAttack()) return;
 
         TryInteract(other.gameObject);
 
@@ -153,15 +128,6 @@ public class BossSweepDamager : MAttackTrigger
         TryStopAnimator();
 
         IMDamage damagee = other.GetComponentInParent<IMDamage>();
-
-       //if (damagee == null)
-       //{
-       //    Debug.Log($"[Sweep] No IMDamage implementation found on {other.name}.");
-       //}
-       //else
-       //{
-       //    Debug.Log($"[Sweep] Damage target resolved: {other.name}.");
-       //}
 
         if (damagee != null) damagee.LastForceMode = ForceMode.Impulse;
 
@@ -176,8 +142,8 @@ public class BossSweepDamager : MAttackTrigger
 
     private Vector3 GetSegmentPosition(int index)
     {
-        // Without a middle point, interpolate directly from base to tip.
-        if (hitboxMiddle == null)
+
+        if (hitboxMiddle == null) //중간 부분 없을 때
         {
             float t = (segments > 1) ? (float)index / (segments - 1) : 0f;
             return Vector3.Lerp(hitboxBase.position, hitboxTip.position, t);
@@ -186,14 +152,13 @@ public class BossSweepDamager : MAttackTrigger
         {
             int midIndex = (segments - 1) / 2;
 
-            // First half: base to middle.
-            if (index <= midIndex)
+     
+            if (index <= midIndex)// 베이스 to 중간에서 위치
             {
                 float t = (midIndex > 0) ? (float)index / midIndex : 0f;
                 return Vector3.Lerp(hitboxBase.position, hitboxMiddle.position, t);
-            }
-            // Second half: middle to tip.
-            else
+            }   
+            else // 중간 to 끝 위치
             {
                 int remainingSegments = (segments - 1) - midIndex;
                 float t = (float)(index - midIndex) / remainingSegments;

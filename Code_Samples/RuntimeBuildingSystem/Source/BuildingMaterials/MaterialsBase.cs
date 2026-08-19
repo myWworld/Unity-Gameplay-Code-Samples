@@ -133,7 +133,7 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
     {
         if (parentPrefab == null)
         {
-            UnityEngine.Debug.LogWarning("Stair null입니다!");
+    
             return null;
         }
         return this.parentPrefab; // 부모 프리팹 반환
@@ -209,8 +209,7 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
             {
                 if (!torch.HasSupported(this.GetGameObject()))
                 {
-
-                    Destroy(materialRoot);
+                    torch.OnHpEmpty();
                 }
             }
         }

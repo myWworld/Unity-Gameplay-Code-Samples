@@ -95,17 +95,7 @@ public class BuildingSystem : MonoBehaviour
     private bool isBuildingModeActive;
     public bool bIsBuildingMode => isBuildingModeActive;
 
-    public void SetBuildingModeActive(bool active)
-    {
-        if (isBuildingModeActive == active)
-        {
-            SyncCursorVisibilityForState();
-            return;
-        }
 
-        isBuildingModeActive = active;
-        SyncCursorVisibilityForState();
-    }
 
     [Header("Variables for Material And Pos")]
     private IMaterial curMaterial = null;
@@ -122,7 +112,7 @@ public class BuildingSystem : MonoBehaviour
 
 
     [Header("Variables for Rotation")]
-    private Vector3 initMatLocalRot = Vector3.zero; //자재의 초기 로컬 회전값 저장용 (회전시 사용)
+
     private Vector3 prevMatLocalRot = Vector3.zero;
     private float rotationY = 0f; // 회전 상태 저장
     public float maxDistance = 4.0f;
@@ -162,29 +152,6 @@ public class BuildingSystem : MonoBehaviour
     private GameObject cachedHighlightRoot = null;
 
 
-
-    public void SetRemoveMode(bool isRemoveMode)
-    {
-        bool changed = bIsRemoveMode != isRemoveMode;
-        bIsRemoveMode = isRemoveMode;
-
-        if (bIsRemoveMode == true)
-        {
-            GetBackToOtherMode();
-        }
-
-        buildOrRemove?.ResetRemoveCandidate();
-
-        if (changed)
-        {
-            OnBuildingModeChanged?.Invoke(bIsRemoveMode ? RemoveState : currentBuildingState);
-        }
-    }
-
-    public bool IsRemoveMode()
-    {
-        return bIsRemoveMode || currentBuildingState == RemoveState;
-    }
 
     public bool IsConstructionMode()
     {
@@ -232,10 +199,6 @@ public class BuildingSystem : MonoBehaviour
         }
     }
 
-    private void OnDestroy()
-    {
-        ReleaseBuildingCursorVisibility();
-    }
 
     private bool rotateAxis = true; //회전축을 Y로 설정할지 여부 (기본값은 Y축 회전)
 
@@ -250,199 +213,13 @@ public class BuildingSystem : MonoBehaviour
         if (uiManager.isInventoryOpen == true)
             return;
 
-        Profiler.BeginSample("BuildingManagement Update");
+       // Profiler.BeginSample("BuildingManagement Update");
         currentBuildingState?.Update(this);
-        Profiler.EndSample();
+       // Profiler.EndSample();
 
     }
 
-    public void ChangeState(IBuildingState newState)
-    {
-        ChangeState(newState, isBuildingModeActive);
-    }
-
-    public void ChangeState(IBuildingState newState, bool buildingModeActive)
-    {
-        currentBuildingState?.Exit(this);
-        if(currentBuildingState != null)
-            prevBuildingState = currentBuildingState;
-
-        currentBuildingState = newState;
-        isBuildingModeActive = buildingModeActive;
-        bIsRemoveMode = newState == RemoveState;
-        currentBuildingState?.Enter(this);
-        SyncCursorVisibilityForState();
-        OnBuildingModeChanged?.Invoke(currentBuildingState);
-    }
-
-    private void SyncCursorVisibilityForState()
-    {
-        bool shouldShowCursor = isBuildingModeActive &&
-                                IsBuildToolEquipped &&
-                                (currentBuildingState == HoldingState || currentBuildingState == RemoveState);
-
-        if (shouldShowCursor)
-        {
-            RuntimeCursorController.RequestVisible(this);
-            cursorVisibilityRequested = true;
-            return;
-        }
-
-        ReleaseBuildingCursorVisibility();
-    }
-
-    private void ReleaseBuildingCursorVisibility()
-    {
-        if (!cursorVisibilityRequested)
-        {
-            return;
-        }
-
-        RuntimeCursorController.ReleaseVisible(this);
-        cursorVisibilityRequested = false;
-    }
-
-
-    public void ProcessRemoveMaterial()
-    {
-        inputHandler.UpdateInputData();
-
-        GameObject rayCastedObj = inputHandler.RayCastedObject;
-        GameObject removeTarget = rayCastedObj;
-
-        if (BuildingColliderUtility.TryResolveMaterialRoot(rayCastedObj, out GameObject materialRoot, out _))
-        {
-            removeTarget = materialRoot;
-        }
-
-        // Validator에게 검사 위임
-        if (removeTarget != null && placementValidator.IsRemovableLayer(removeTarget.layer))
-        {
-            buildOrRemove.RemoveCandidateColorChange(removeTarget, Color.blue);
-            if (Input.GetMouseButtonDown(0)) RemoveMaterial(removeTarget);
-        }
-        else
-        {
-            buildOrRemove.ResetRemoveCandidate();
-        }
-    }
-
-    public void ChangeSnapPoint(int val)
-    {
-
-        if (curMaterial == null)
-            return;
-
-        int anchorCnt = curMaterial.GetAnchors().Count; //현재 스냅 포인트 인덱스 저장
-        int maxCnt = anchorCnt * 2;
-        int curCnt = 0;
-        int idx = curSnapIdx + val;
-
-        if (idx < 0)
-        {
-            idx = anchorCnt - 1; //마지막 인덱스로 설정
-        }
-        else if (idx >= anchorCnt)
-        {
-            idx = 0; //첫번째 인덱스로 설정
-
-        }
-
-        GameObject snapPoint = null;
-
-
-        while (curCnt < maxCnt)
-        {
-            snapPoint = curMaterial.GetAnchorByIndx(idx);
-
-            if (snapPoint == null || (snapPoint.CompareTag(LayerAndTagConstants.Tag_Pivot) == false && snapPoint.CompareTag(LayerAndTagConstants.Tag_DoorPivot) == false))
-            {
-                idx += val; //다음 인덱스로 이동
-
-                if (idx < 0)
-                {
-                    idx = anchorCnt - 1; //마지막 인덱스로 설정
-                }
-                else if (idx >= anchorCnt)
-                {
-                    idx = 0; //첫번째 인덱스로 설정
-
-                }
-                curCnt++;
-                continue;
-            }
-
-
-            curSnapIdx = idx; //현재 스냅 포인트 인덱스 업데이트
-            curSnapPoint = snapPoint; //현재 스냅 포인트 업데이트
-            //UnityEngine.Debug.Log($"Snap point changed to index {curSnapIdx} and its name is {curSnapPoint.name}");
-            break;
-
-        }
-
-
-        cubeForCheckCurSnap.transform.SetParent(curSnapPoint.transform, false);
-        cubeForCheckCurSnap.transform.localPosition = Vector3.zero;
-        cubeForCheckCurSnap.transform.localRotation = Quaternion.identity;
-
-    }
-
-    public void ToggleSnapMode()
-    {
-        if (curBuildingMode == eBuildingMode.Snap || curBuildingMode == eBuildingMode.SnapFree)
-        {
-            curBuildingMode = eBuildingMode.ManualSnap;
-            ChangeSnapPoint(0); //수동 스냅으로 전환할 때 현재 스냅 포인트로 설정
-        }
-        else
-        {
-            curBuildingMode = eBuildingMode.Snap;
-        }
-
-
-    }
-
-
-    public void PosUpdate()
-    {
-        if(curMaterial == null)
-            return;
-
-        inputHandler.UpdateInputData();
-
-        bool isOutOfRange = NotWithinCoverage();
-        GameObject materialObj = curMaterialTr.gameObject;
-
-        if(isOutOfRange)
-        {
-           // UnityEngine.Debug.Log("Not In Range");
-           rangeDecal.material.SetColor("_Color", notInRangeColor);
-        }
-        else
-        {
-            rangeDecal.material.SetColor("_Color", InRangeColor);
-        }
-
-        if (materialObj.activeSelf == isOutOfRange)
-        {
-            materialObj.SetActive(!isOutOfRange);
-        }
-
-        if (!isOutOfRange)
-        {
-            MaterialPosUpdate();
-        }
-
-    }
-
-
-
-    void OnDrawGizmos()
-    {
-        Gizmos.color = Color.red; // 색상 지정
-        Gizmos.DrawSphere(inputHandler.MousePos, 0.25f); // 구체 그리기
-    }
-
+  
 
 
     private void BMInitialize()
@@ -629,6 +406,317 @@ public class BuildingSystem : MonoBehaviour
         isInitialized = false;
     }
 
+    #region State
+
+    public void ChangeState(IBuildingState newState)
+    {
+        ChangeState(newState, isBuildingModeActive);
+    }
+
+    public void ChangeState(IBuildingState newState, bool buildingModeActive)
+    {
+        currentBuildingState?.Exit(this);
+
+        if (currentBuildingState != null)
+            prevBuildingState = currentBuildingState;
+
+        currentBuildingState = newState;
+
+        isBuildingModeActive = buildingModeActive;
+        bIsRemoveMode = newState == RemoveState;
+
+        currentBuildingState?.Enter(this);
+        OnBuildingModeChanged?.Invoke(currentBuildingState);
+    }
+
+    #endregion State
+
+
+
+    #region remove
+
+    public void ProcessRemoveMaterial()
+    {
+        inputHandler.UpdateInputData();
+
+        GameObject rayCastedObj = inputHandler.RayCastedObject;
+        GameObject removeTarget = rayCastedObj;
+
+        if (BuildingColliderUtility.TryResolveMaterialRoot(rayCastedObj, out GameObject materialRoot, out _))
+        {
+            removeTarget = materialRoot;
+        }
+
+        // Validator에게 검사 위임
+        if (removeTarget != null && placementValidator.IsRemovableLayer(removeTarget.layer))
+        {
+            buildOrRemove.RemoveCandidateColorChange(removeTarget, Color.blue);
+            if (Input.GetMouseButtonDown(0)) RemoveMaterial(removeTarget);
+        }
+        else
+        {
+            buildOrRemove.ResetRemoveCandidate();
+        }
+    }
+
+
+    public void RemoveMaterial(GameObject targetObj)
+    {
+ 
+        buildOrRemove.RemoveMaterial(targetObj);
+        if (targetObj != null)
+        {
+            ItemDurabilityUtility.TryConsumeEquipped(ItemDurabilityReason.BuildAction, this);
+        }
+    }
+
+    #endregion remove
+
+    #region snap
+
+    public void ChangeSnapPoint(int val)
+    {
+
+        if (curMaterial == null)
+            return;
+
+        int anchorCnt = curMaterial.GetAnchors().Count;
+        if (anchorCnt == 0) return;
+
+        int maxCnt = anchorCnt * 2;
+        int curCnt = 0;
+
+        // val이 음수일 때를 대비해 한 번 더 anchorCnt를 더해주고 나누기
+        int idx = (curSnapIdx + val % anchorCnt + anchorCnt) % anchorCnt;
+
+        GameObject snapPoint = null;
+
+        while (curCnt < maxCnt)
+        {
+            snapPoint = curMaterial.GetAnchorByIndx(idx);
+
+            // 유효성 검사
+            bool isValidPoint = snapPoint != null &&
+                                (snapPoint.CompareTag(LayerAndTagConstants.Tag_Pivot) ||
+                                 snapPoint.CompareTag(LayerAndTagConstants.Tag_DoorPivot));
+
+            if (isValidPoint)
+            {
+                curSnapIdx = idx;
+                curSnapPoint = snapPoint;
+                break;
+            }
+
+
+            idx = (idx + val % anchorCnt + anchorCnt) % anchorCnt;
+            curCnt++;
+        }
+
+        if (curSnapPoint != null)//표시 구를 새로운 스냅포인트로 이동
+        {
+            cubeForCheckCurSnap.transform.SetParent(curSnapPoint.transform, false);
+            cubeForCheckCurSnap.transform.localPosition = Vector3.zero;
+            cubeForCheckCurSnap.transform.localRotation = Quaternion.identity;
+        }
+
+    }
+
+    public void ToggleSnapMode()
+    {
+        if (curBuildingMode == eBuildingMode.Snap || curBuildingMode == eBuildingMode.SnapFree)
+        {
+            curBuildingMode = eBuildingMode.ManualSnap;
+            ChangeSnapPoint(0); //수동 스냅으로 전환할 때 현재 스냅 포인트로 설정
+        }
+        else
+        {
+            curBuildingMode = eBuildingMode.Snap;
+        }
+
+
+    }
+
+    private void SnapFreeCheck()
+    {
+        if (IsSnapFreeModifierHeld())
+        {
+            if (curBuildingMode == eBuildingMode.Snap)
+            {
+                curBuildingMode = eBuildingMode.SnapFree;
+                snapController.ClearSnapState();
+                curSnapPoint = null;
+            }
+            else if (curBuildingMode == eBuildingMode.ManualSnap)
+            {
+                curBuildingMode = eBuildingMode.ManualSnapFree;
+                snapController.ClearSnapState();
+                curSnapPoint = null;
+            }
+        }
+        else
+        {
+            if (curBuildingMode == eBuildingMode.SnapFree)
+            {
+                curBuildingMode = eBuildingMode.Snap;
+            }
+            else if (curBuildingMode == eBuildingMode.ManualSnapFree)
+            {
+                curBuildingMode = eBuildingMode.ManualSnap;
+            }
+        }
+
+    }
+
+    private bool IsSnapFreeModifierHeld()
+    {
+        bool primaryHeld = snapFreeModifierKey != KeyCode.None && Input.GetKey(snapFreeModifierKey);
+        bool secondaryHeld = secondarySnapFreeModifierKey != KeyCode.None && Input.GetKey(secondarySnapFreeModifierKey);
+        return primaryHeld || secondaryHeld;
+    }
+
+    #endregion snap
+
+    #region PosUpdate
+    public void PosUpdate()
+    {
+        if (curMaterial == null)
+            return;
+
+        inputHandler.UpdateInputData();
+
+        bool isOutOfRange = NotWithinCoverage(); //플레이어를 기준으로 건축 자재가 일정 거리 내부에 있는지 체크
+        GameObject materialObj = curMaterialTr.gameObject;
+
+        if (isOutOfRange) //거리 여부에 따라 주변 범위 색깔 변경
+        {
+            // UnityEngine.Debug.Log("Not In Range");
+            rangeDecal.material.SetColor("_Color", notInRangeColor);
+        }
+        else
+        {
+            rangeDecal.material.SetColor("_Color", InRangeColor);
+        }
+
+        if (materialObj.activeSelf == isOutOfRange)
+        {
+            materialObj.SetActive(!isOutOfRange);
+        }
+
+        if (!isOutOfRange)
+        {
+            MaterialPosUpdate(); //거리 내일 경우 위치 업데이트
+        }
+
+    }
+
+    public void MaterialPosUpdate(bool isSyncPosForFirstTime = false, bool debug = false) //자재 위치 업데이트
+    {
+
+
+        if (curMaterial != null)
+        {
+            Transform materialTr = curMaterialTr;
+
+            if (materialTr != null)
+            {
+                Vector3 targetPosition = previousPosition;
+
+                SnapFreeCheck();
+
+                if (isSyncPosForFirstTime == true)
+                {
+                    if (curBuildingMode == eBuildingMode.Snap)
+                    {
+                        targetPosition = snapController.AdjustMaterialWithClosestSnapPoint(materialTr, inputHandler.MousePos, inputHandler.CurHitData, ref curSnapPoint, ref curPivotPoint, true, false);
+                    }
+                    else // eBuildingMode.ManualSnap 일 때
+                    {
+                        //  Transform snapTr = curSnapPoint != null ? curSnapPoint.transform : null;
+                        targetPosition = snapController.AdjustMaterialWithCurSnapPoint(curSnapPoint?.transform, curMaterial.GetGameObject(), inputHandler.MousePos, inputHandler.CurHitData, true);
+                    }
+
+                }
+                else if (curBuildingMode == eBuildingMode.Snap)
+                {
+                    targetPosition = snapController.AdjustMaterialWithClosestSnapPoint(materialTr, inputHandler.MousePos, inputHandler.CurHitData, ref curSnapPoint, ref curPivotPoint, false, true); //자재 위치를 가장 가까운 스냅 포인트로 조정
+                }
+                else if (curBuildingMode == eBuildingMode.SnapFree)
+                {
+                    targetPosition = snapController.AdjustMaterialWithClosestSnapPoint(materialTr, inputHandler.MousePos, inputHandler.CurHitData, ref curSnapPoint, ref curPivotPoint, true, false);
+                }
+                else if (curBuildingMode == eBuildingMode.ManualSnapFree)
+                {
+                    targetPosition = snapController.AdjustMaterialWithCurSnapPoint(curSnapPoint?.transform, curMaterial.GetGameObject(), inputHandler.MousePos, inputHandler.CurHitData, true);
+                }
+                else
+                {
+                    targetPosition = snapController.AdjustMaterialWithCurSnapPoint(curSnapPoint?.transform, curMaterial.GetGameObject(), inputHandler.MousePos, inputHandler.CurHitData);
+                }
+
+                if (curMaterial.GetBuildingMaterialType() == eBuildingMaterial.Boat) //보트일경우 일정 거리 물에서부터 떨어뜨리기
+                {
+                    if (WaterSystem.TryGetWaterHeight(targetPosition, out float waterHeight))
+                    {
+          
+                        if (curMaterial is Boat boat)
+                            targetPosition.y = waterHeight + boat.PreviewHeightOffset;
+                    }
+                }
+
+
+                pivotPos = targetPosition;
+
+                if (debug == true)
+                    UnityEngine.Debug.Log($"[BuildingSystem] Preview pivot: {pivotPos}");
+
+                if (uiManager.isInventoryOpen == true)
+                {
+                    if (playerTransform != null)
+                    {
+                        targetPosition = playerTransform.position + playerTransform.forward * 2.0f;//+ Vector3.up * 1.3f;
+                    }
+
+                }
+
+                Transform visual = curMaterial.GetVisualMesh();
+
+                // 부모가 움직이기 전, 현재 자식 메쉬가 눈에 보이고 있는 월드 좌표를 백업
+                Vector3 prevVisualWorldPos = visual != null ? visual.position : curMaterialTr.position;
+                Quaternion prevVisualWorldRot = visual != null ? visual.rotation : curMaterialTr.rotation;
+
+                //  부모는 스냅 및 입력 처리된 targetPosition으로 즉시 순간이동
+                curMaterialTr.position = targetPosition;
+
+                if (visual != null)
+                {
+                    // 자재 원본의 오프셋을 반영한 최종 도달해야 할 실제 월드 기준점을 계산
+                    // 부모의 새 위치/회전 기준을 적용하여 자식의 원드 타겟
+                    Vector3 targetWorldPos = curMaterialTr.TransformPoint(curMaterial.GetDefaultLocalPos());
+                    Quaternion targetWorldRot = curMaterialTr.rotation * curMaterial.GetDefaultLocalRot();
+
+                    visual.position = Vector3.Lerp(prevVisualWorldPos, targetWorldPos, Time.deltaTime * 25f);
+                    visual.rotation = Quaternion.Lerp(prevVisualWorldRot, targetWorldRot, Time.deltaTime * 25f);
+                }
+
+
+                previousPosition = materialTr.position; // 위치 갱신
+            }
+            else
+            {
+                UnityEngine.Debug.LogError("curMaterial에 Transform 컴포넌트가 없습니다!");
+            }
+        }
+        else
+        {
+            //   UnityEngine.Debug.LogError("플레이어 또는 자재가 null입니다!");
+        }
+    }
+
+    #endregion PosUpdate
+
+
+    #region InventoryRelated
+
     // 컨트롤러(인벤토리)에서 마우스를 올렸을 때 호출할 함수
     public void RequestShowRequirements(BuildingDataSO data)
     {
@@ -672,22 +760,27 @@ public class BuildingSystem : MonoBehaviour
             int reqCount = req.Value;
 
 
-           inventoryAdapter.ConsumeItem(reqName, reqCount);
+           inventoryAdapter.ConsumeItem(reqName, reqCount);//InventoryAdapter에서 아이템 소비사용
         }
 
     }
+
+    #endregion InventoryRelated
+
+    #region Placement
+
     public bool IsPossibleToPlace()
     {
 
         GameObject targetRoot = null;
 
-        if (snapController.isSnapped && snapController.bestWorldSnap != null)
+        if (snapController.isSnapped && snapController.bestWorldSnap != null)//스냅된 자재가 있을 경우
         {
-            if (lastSnappedPivot == snapController.bestWorldSnap)
+            if (lastSnappedPivot == snapController.bestWorldSnap)//이번에 스냅된 자재가 캐시됐던 거랑 캐시된 거 저장
             {
                 targetRoot = cachedHighlightRoot;
             }
-            else
+            else // 아닐 경우 새로 캐시하기
             {
                 IMaterial parentMaterial = snapController.bestWorldSnap.GetComponentInParent<IMaterial>();
                 targetRoot = parentMaterial != null ? parentMaterial.GetGameObject() : null;
@@ -702,10 +795,9 @@ public class BuildingSystem : MonoBehaviour
             cachedHighlightRoot = null;
         }
 
-        //UpdateHighlightTarget(targetRoot);
 
         GameObject matObject = curMaterialTr != null ? curMaterialTr.gameObject : null;
-        return placementValidator.IsPossibleToPlace(matObject,targetRoot, inputHandler.MousePos, pivotPos);
+        return placementValidator.IsPossibleToPlace(matObject, targetRoot, inputHandler.MousePos, pivotPos);//현재 홀딩 자재(matObject)를 targetRoot에 배치가능한지 체크
     }
 
     public void PlaceMaterial()
@@ -714,28 +806,28 @@ public class BuildingSystem : MonoBehaviour
             return;
 
 
-        if (!placementValidator.CheckIfMeetRequirement(curMaterial.Data)) return;
+        if (!placementValidator.CheckIfMeetRequirement(curMaterial.Data)) return; //마지막으로 충분한 재료가 있는지 체크
 
         var materialType = curMaterial.GetBuildingMaterialType();
         bool requiresSupport = !(materialType == eBuildingMaterial.Torch) && !(materialType == eBuildingMaterial.Boat);
 
-        if (requiresSupport)
+        if (requiresSupport)//지지력이 필요한 자재들(벽, 바닥 등..)
         {
-            integritySolver.UpdateParentsAndChildren(curMaterial);
+            integritySolver.UpdateParentsAndChildren(curMaterial); //연결관계 등록후
 
-            float finalSupport = placementValidator.GetCachedSupportValue();
+            float finalSupport = placementValidator.GetCachedSupportValue();//마지막으로 현재 자재의 예측 지지력 가져옴
 
-            if (finalSupport < 0.25f)
+            if (finalSupport < 0.25f)// 기준 미달시
             {
-                integritySolver.ClearParentAndChildren(curMaterial);
+                integritySolver.ClearParentAndChildren(curMaterial); //연결 관계 해제
                 return;
             }
 
             curMaterial.SupportValue = finalSupport;
-            integritySolver.HandleMaterialPlacement(curMaterial);
+            integritySolver.HandleMaterialPlacement(curMaterial);//새로운 자재 배치후 다시 지지력 전파
 
             placementValidator.ResetCache();
-            UnityEngine.Debug.Log($"설치 완료! 부여된 지지력: {finalSupport}");
+           // UnityEngine.Debug.Log($"설치 완료! 부여된 지지력: {finalSupport}");
         }
 
 
@@ -743,11 +835,14 @@ public class BuildingSystem : MonoBehaviour
         prevMatLocalRot = curMaterialTr.localEulerAngles;
 
         OnBuildAction();
-        buildingMaterialManagement.ActivateColliderAndLayer(curMaterial.GetGameObject());
-        removeIngredientsByReq();
-        curMaterial.ResetVisualTransform();
-        buildOrRemove.PlaceMaterial(pivotPos);
-        ItemDurabilityUtility.TryConsumeEquipped(ItemDurabilityReason.BuildAction, this);
+
+        removeIngredientsByReq(); //자재 소비
+
+        buildingMaterialManagement.ActivateColliderAndLayer(curMaterial.GetGameObject());//설치한 자재 모든 콜라이더 재 활성화
+        buildOrRemove.PlaceMaterial(pivotPos);//진짜 목표 위치에 배치
+        curMaterial.ResetVisualTransform();//visual tr을 원래 부모에 있던 default위치 ,회전으로
+
+        ItemDurabilityUtility.TryConsumeEquipped(ItemDurabilityReason.BuildAction, this);//내구도 관리
 
         DoorPlacementProcess();
 
@@ -790,6 +885,25 @@ public class BuildingSystem : MonoBehaviour
 
     }
 
+    private bool NotWithinCoverage()
+    {
+        if (inputHandler.CurHitData.collider == null)
+            return true; //만약 raycast가 아무것도 맞추지 못했을 경우 범위 안에 없다고 판단
+
+        if (playerTransform == null || mainCamera == null)
+            return true;
+
+        Vector3 flatMousePos = new Vector3(inputHandler.MousePos.x, 0f, inputHandler.MousePos.z);
+        Vector3 flatPlayerPos = new Vector3(playerTransform.position.x, 0f, playerTransform.position.z);
+
+        float sqrDist = (flatMousePos - flatPlayerPos).sqrMagnitude;
+        float sqrMaxDistance = Mathf.Clamp(maxDistance * maxDistance, 0f, 1000f);
+
+        if (sqrDist > sqrMaxDistance)
+            return true;//정해진 범위보다 길경우
+        else
+            return false; //안 길경우
+    }
 
     private void DoorPlacementProcess()
     {
@@ -814,19 +928,10 @@ public class BuildingSystem : MonoBehaviour
         }
     }
 
-    public void RemoveMaterial(GameObject targetObj)
-    {
-        //if (cubeForCheckCurSnap != null)
-        //{
-        //    cubeForCheckCurSnap.transform.SetParent(null, true);
-        //    cubeForCheckCurSnap.SetActive(false);
-        //}
-        buildOrRemove.RemoveMaterial(targetObj);
-        if (targetObj != null)
-        {
-            ItemDurabilityUtility.TryConsumeEquipped(ItemDurabilityReason.BuildAction, this);
-        }
-    }
+    #endregion Placement
+
+
+    #region Materials
 
     public bool IsHoldingMaterial() //자재를 들고 있는지 체크
     {
@@ -840,6 +945,7 @@ public class BuildingSystem : MonoBehaviour
     {
         return curMaterial;
     }
+
     public void ChangeHoldingMaterial(BuildingDataSO data)// 사용자의 입력에 따라 벽, 바닥, 등.. 손에 홀딩하는 것을 교체함
     {
         if (!EnsureInitialized())
@@ -914,8 +1020,6 @@ public class BuildingSystem : MonoBehaviour
             }
 
 
-            initMatLocalRot = curMaterialTr.localEulerAngles;
-
 
             ChangeState(HoldingState);
             NotifyHoldingMaterialChanged();
@@ -941,144 +1045,6 @@ public class BuildingSystem : MonoBehaviour
 
     }
 
-    public void GetBackToOtherMode() //만약 건축모드 해제시 현재 들고 있던것을 내려놓고 다른 모드로 전환
-    {
-        if (IsHoldingMaterial())
-        {
-            GameObject materialObj = curMaterialTr.gameObject;
-
-            buildingMaterialManagement.ActivateColliderAndLayer(materialObj);
-            materialObj.SetActive(false);
-
-            buildingMaterialManagement.HideMaterial(materialObj);
-            prevMaterial = null;
-            curMaterial = null;
-            curPivot = null;
-        }
-        buildOrRemove.ResetRemoveCandidate();
-
-        buildOrRemove.ResetHighlitedObject();
-        if (snapController != null)
-        {
-            snapController.ClearSnapState();
-        }
-
-        UpdateHighlightTarget(null);
-        lastSnappedPivot = null;
-        cachedHighlightRoot = null;
-
-        NotifyHoldingMaterialChanged();
-    }
-
-    private void NotifyHoldingMaterialChanged()
-    {
-        OnHoldingMaterialChanged?.Invoke(curMaterial != null ? curMaterial.Data : null);
-    }
-
-
-    public void MaterialPosUpdate(bool isSyncPosForFirstTime = false, bool debug = false) //자재 위치 업데이트
-    {
-
-
-        if (curMaterial != null)
-        {
-            Transform materialTr = curMaterialTr;
-
-            if (materialTr != null)
-            {
-                Vector3 targetPosition = previousPosition;
-
-                SnapFreeCheck();
-
-                if (isSyncPosForFirstTime == true)
-                {
-                    if (curBuildingMode == eBuildingMode.Snap)
-                    {
-                        targetPosition = snapController.AdjustMaterialWithClosestSnapPoint(materialTr, inputHandler.MousePos, inputHandler.CurHitData, ref curSnapPoint, ref curPivotPoint, true, false);
-                    }
-                    else // eBuildingMode.ManualSnap 일 때
-                    {
-                        //  Transform snapTr = curSnapPoint != null ? curSnapPoint.transform : null;
-                        targetPosition = snapController.AdjustMaterialWithCurSnapPoint(curSnapPoint?.transform, curMaterial.GetGameObject(), inputHandler.MousePos, inputHandler.CurHitData, true);
-                    }
-
-                }
-                else if (curBuildingMode == eBuildingMode.Snap)
-                {
-                        targetPosition = snapController.AdjustMaterialWithClosestSnapPoint(materialTr, inputHandler.MousePos, inputHandler.CurHitData, ref curSnapPoint, ref curPivotPoint, false, true); //자재 위치를 가장 가까운 스냅 포인트로 조정
-                }
-                else if(curBuildingMode == eBuildingMode.SnapFree)
-                {
-                    targetPosition = snapController.AdjustMaterialWithClosestSnapPoint(materialTr, inputHandler.MousePos, inputHandler.CurHitData, ref curSnapPoint, ref curPivotPoint, true, false);
-                }
-                else if(curBuildingMode == eBuildingMode.ManualSnapFree)
-                 {
-                    targetPosition = snapController.AdjustMaterialWithCurSnapPoint(curSnapPoint?.transform, curMaterial.GetGameObject(), inputHandler.MousePos, inputHandler.CurHitData, true);
-                }
-                else
-                {
-                    targetPosition = snapController.AdjustMaterialWithCurSnapPoint(curSnapPoint?.transform, curMaterial.GetGameObject(), inputHandler.MousePos, inputHandler.CurHitData);
-                }
-
-                if(curMaterial.GetBuildingMaterialType() == eBuildingMaterial.Boat)
-                {
-                    if (WaterSystem.TryGetWaterHeight(targetPosition, out float waterHeight))
-                    {
-                      //  UnityEngine.Debug.Log($"물입니다");
-                        if (curMaterial is Boat boat)
-                            targetPosition.y = waterHeight + boat.PreviewHeightOffset;
-                    }
-                }
-
-
-                pivotPos = targetPosition;
-
-                if (debug == true)
-                    UnityEngine.Debug.Log($"[BuildingSystem] Preview pivot: {pivotPos}");
-
-                if (uiManager.isInventoryOpen == true)
-                {
-                    if (playerTransform != null)
-                    {
-                        targetPosition = playerTransform.position + playerTransform.forward * 2.0f;//+ Vector3.up * 1.3f;
-                    }
-
-                }
-
-                Transform visual = curMaterial.GetVisualMesh();
-
-                // 부모가 움직이기 전, 현재 자식 메쉬가 눈에 보이고 있는 월드 좌표를 백업
-                Vector3 prevVisualWorldPos = visual != null ? visual.position : curMaterialTr.position;
-                Quaternion prevVisualWorldRot = visual != null ? visual.rotation : curMaterialTr.rotation;
-
-                //  부모는 스냅 및 입력 처리된 targetPosition으로 즉시 순간이동
-                curMaterialTr.position = targetPosition;
-
-                if (visual != null)
-                {
-                    // 자재 원본의 오프셋을 반영한 '최종 도달해야 할 실제 월드 기준점'을 계산
-                    // 부모의 새 위치/회전 기준을 적용하여 자식의 원드 타겟
-                    Vector3 targetWorldPos = curMaterialTr.TransformPoint(curMaterial.GetDefaultLocalPos());
-                    Quaternion targetWorldRot = curMaterialTr.rotation * curMaterial.GetDefaultLocalRot();
-
-                    visual.position = Vector3.Lerp(prevVisualWorldPos, targetWorldPos, Time.deltaTime * 25f);
-                    visual.rotation = Quaternion.Lerp(prevVisualWorldRot, targetWorldRot, Time.deltaTime * 25f);
-                }
-
-
-                previousPosition = materialTr.position; // 위치 갱신
-            }
-            else
-            {
-                UnityEngine.Debug.LogError("curMaterial에 Transform 컴포넌트가 없습니다!");
-            }
-        }
-        else
-        {
-            //   UnityEngine.Debug.LogError("플레이어 또는 자재가 null입니다!");
-        }
-    }
-
     public void MakeRotate()
     {
         float angle = inputHandler.GetRotationInput();
@@ -1088,45 +1054,8 @@ public class BuildingSystem : MonoBehaviour
         }
     }
 
-    private void SnapFreeCheck()
-    {
-        if (IsSnapFreeModifierHeld())
-        {
-            if (curBuildingMode == eBuildingMode.Snap)
-            {
-                curBuildingMode = eBuildingMode.SnapFree;
-                snapController.ClearSnapState();
-                curSnapPoint = null;
-            }
-            else if (curBuildingMode == eBuildingMode.ManualSnap)
-            {
-                curBuildingMode = eBuildingMode.ManualSnapFree;
-                snapController.ClearSnapState();
-                curSnapPoint = null;
-            }
-        }
-        else
-        {
-            if (curBuildingMode == eBuildingMode.SnapFree)
-            {
-                curBuildingMode = eBuildingMode.Snap;
-            }
-            else if (curBuildingMode == eBuildingMode.ManualSnapFree)
-            {
-                curBuildingMode = eBuildingMode.ManualSnap;
-            }
-        }
 
-    }
 
-    private bool IsSnapFreeModifierHeld()
-    {
-        bool primaryHeld = snapFreeModifierKey != KeyCode.None && Input.GetKey(snapFreeModifierKey);
-        bool secondaryHeld = secondarySnapFreeModifierKey != KeyCode.None && Input.GetKey(secondarySnapFreeModifierKey);
-        return primaryHeld || secondaryHeld;
-    }
-
-    public bool pivotAttached = false;
 
     public void RotatePreview(float angle)
     {
@@ -1145,12 +1074,52 @@ public class BuildingSystem : MonoBehaviour
         }
     }
 
+    #endregion Materials
+
+    public void GetBackToOtherMode() //만약 건축모드 해제시 현재 들고 있던것을 내려놓고 다른 모드로 전환
+    {
+        if (IsHoldingMaterial()) //자재를 들고 있었을 경우
+        {
+            GameObject materialObj = curMaterialTr.gameObject;
+
+            buildingMaterialManagement.ActivateColliderAndLayer(materialObj); //다시 자재의 모든 콜라이더 활성화
+            materialObj.SetActive(false); //시각적으로 안 보이게
+
+            buildingMaterialManagement.HideMaterial(materialObj); //풀로 반환
+            prevMaterial = null;
+            curMaterial = null;
+            curPivot = null;
+        }
+        buildOrRemove.ResetRemoveCandidate();//만약 삭제 대상으로 남아있던게 있었을 경우 초기화
+
+        buildOrRemove.ResetHighlitedObject();//건축 지지력 표시로 렌더링 상태가 바뀐 객체가 남아있을 경우 초기화
+        if (snapController != null)
+        {
+            snapController.ClearSnapState(); //마지막으로 스냅된 객체에 대한 정보 초기화
+        }
+
+        lastSnappedPivot = null;
+        cachedHighlightRoot = null;
+
+        NotifyHoldingMaterialChanged();
+    }
+
+    private void NotifyHoldingMaterialChanged()
+    {
+        OnHoldingMaterialChanged?.Invoke(curMaterial != null ? curMaterial.Data : null);
+    }
+
+    public bool pivotAttached = false;
+
+
+
+
     public void ResetHighlitedObject()
     {
         buildOrRemove?.ResetHighlitedObject();
     }
 
-    public void ResetDecalRange()
+    public void ResetDecalRange()//건축모드 나갈시 초기인 내부에 있음 표시 색으로 초기화
     {
         if(rangeDecal != null)
         {
@@ -1158,47 +1127,6 @@ public class BuildingSystem : MonoBehaviour
         }
     }
 
-    private bool NotWithinCoverage()
-    {
-        if (inputHandler.CurHitData.collider == null)
-            return true; //만약 raycast가 아무것도 맞추지 못했을 경우 범위 안에 없다고 판단
-
-        if (playerTransform == null || mainCamera == null)
-            return true;
-
-        Vector3 flatMousePos = new Vector3(inputHandler.MousePos.x, 0f, inputHandler.MousePos.z);
-        Vector3 flatPlayerPos = new Vector3(playerTransform.position.x, 0f, playerTransform.position.z);
-
-        float sqrDist = (flatMousePos - flatPlayerPos).sqrMagnitude;
-        float sqrMaxDistance = Mathf.Clamp(maxDistance * maxDistance,0f, 1000f);
-
-        if (sqrDist > sqrMaxDistance)
-            return true;//정해진 범위보다 길경우
-        else
-            return false; //안 길경우
-    }
-
-    public void UpdateHighlightTarget(GameObject targetRoot)
-    {
-
-        if (currentHighlightedVisual != null && (targetRoot == null || GetVisualFromRoot(targetRoot) != currentHighlightedVisual))
-        {
-            currentHighlightedVisual.layer = originalLayer;
-            currentHighlightedVisual = null;
-        }
-
-        if (targetRoot != null)
-        {
-            GameObject visualChild = GetVisualFromRoot(targetRoot);
-
-            if (visualChild != null && currentHighlightedVisual != visualChild)
-            {
-                currentHighlightedVisual = visualChild;
-                originalLayer = visualChild.layer; // 원래 레이어(보통 Default) 기억
-                visualChild.layer = highlightLayerIndex; // Highlight 레이어로 덮어쓰기
-            }
-        }
-    }
 
     private GameObject GetVisualFromRoot(GameObject root)
     {
@@ -1209,7 +1137,7 @@ public class BuildingSystem : MonoBehaviour
         return null;
     }
 
-    public void OnBuildAction()
+    public void OnBuildAction()//건축 시 모션
     {
         if (mAnimal)
         {
