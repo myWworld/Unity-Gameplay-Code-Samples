@@ -128,7 +128,7 @@ public class ActionJumpAttackNode : ActionPlayMode
             Vector3 predictedPos = target.position + (currentVelocity * remainingTime);
 
 
-            if (NavMesh.SamplePosition(predictedPos, out NavMeshHit hitUpdate, 6f, NavMesh.AllAreas))
+            if (NavMesh.SamplePosition(predictedPos, out NavMeshHit hitUpdate, 3f, NavMesh.AllAreas))
             {
                 predictedPos = hitUpdate.position;
             }
