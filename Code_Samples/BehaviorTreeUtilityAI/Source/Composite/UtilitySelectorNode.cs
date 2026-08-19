@@ -82,38 +82,33 @@ public class UtilitySelectorNode : CompositeNode
 
     private Node SelectBestChild()
     {
-        float totalWeight = 0f;
-        List<float> calculatedWeights = new List<float>();
+        float maxScore = -1f;
         Node selectedChild = null;
 
         for (int i = 0; i < data.entries.Count; i++)
         {
+  
             float score = Mathf.Max(0f, data.entries[i].scorer.GetScore(blackBoard));
 
-            // 현재 실행 중인 노드라면 가산점을 줘서 쉽게 안 바뀌게
+            // 현재 실행 중인 노드 관성가산점 부여
             if (children[i] == activeNode)
             {
                 score += data.inertiaBonus;
             }
 
-            calculatedWeights.Add(score);
-            totalWeight += score;
-        }
-
-        if (totalWeight <= 0f) return null;
-
-        float max_val = -1f;
-        int selected_idx = 0;
-        for(int i =0; i < calculatedWeights.Count; i++)
-        {
-            if(max_val < calculatedWeights[i])
+            if (score > maxScore)
             {
-                max_val = calculatedWeights[i];
-                selected_idx = i;
+                maxScore = score;
+                selectedChild = children[i];
             }
         }
 
-        selectedChild = children[selected_idx];
+        if (maxScore <= 0f)
+        {
+            return null;
+        }
+
+        return selectedChild;
 
         //float roll = UnityEngine.Random.Range(0, totalWeight);
         //float cumulativeWeight = 0f;
@@ -129,7 +124,6 @@ public class UtilitySelectorNode : CompositeNode
         //    }
         //}
 
-        return selectedChild;
     }
 
 }
