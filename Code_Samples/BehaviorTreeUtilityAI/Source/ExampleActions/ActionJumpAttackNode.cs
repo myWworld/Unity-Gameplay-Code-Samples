@@ -55,19 +55,19 @@ public class ActionJumpAttackNode : ActionPlayMode
         startPos = mAnimal.transform.position;
         float distance = Vector3.Distance(startPos, target.position);
 
-        // 1. 거리에 따른 '물리적 체공 시간' 계산 (t = d / v)
+        //  거리에 따른 물리적 체공 시간 계산 (t = d / v)
         float physicalDuration = distance / jumpData.baseSpeed;
 
-        // 2. 애니메이션 클립의 실제 체공 구간 길이
+        //  애니메이션 클립의 실제 체공 구간 길이
         float clipAirTime = jumpData.animationClip.length * jumpData.jumpRatio;
 
-        // 3. 최종 jumpDuration 결정 (너무 짧거나 길지 않게 Clamp)
+        // 최종 jumpDuration 결정 (너무 짧거나 길지 않게 Clamp)
         jumpDuration = Mathf.Clamp(physicalDuration, 1.0f, 2.0f);
 
-        // 4. 결정된 시간에 맞춰 애니메이터 속도 동기화
+        // 결정된 시간에 맞춰 애니메이터 속도 동기화
         animator.speed = clipAirTime / jumpDuration;
 
-        // 5. 업데이트된 jumpDuration으로 예측 지점 재계산
+        //  업데이트된 jumpDuration으로 예측 지점 재계산
         Vector3 playerVelocity = Vector3.zero;
         var targetRB = target.GetComponent<Rigidbody>();
         if (targetRB != null) playerVelocity = targetRB.linearVelocity;
@@ -76,12 +76,16 @@ public class ActionJumpAttackNode : ActionPlayMode
 
         targetLandingPos = GetTargetPos(playerVelocity);
 
-        // 3. 나비메쉬 유효성 체크 (맵 밖으로 튀는 것 방지)
+        // 나비메쉬 유효성 체크 (맵 밖으로 튀는 것 방지)
         if (NavMesh.SamplePosition(targetLandingPos, out NavMeshHit hit, 3f, NavMesh.AllAreas))
         {
             targetLandingPos = hit.position;
         }
-
+        else
+        {
+            // 3f 내에 바닥이 없으면, 최소한 타겟(플레이어)의 현재 위치로 착지 지점을 변경
+            targetLandingPos = target.position;
+        }
         targetLandingPos.y -= 0.5f;
 
 
@@ -117,15 +121,23 @@ public class ActionJumpAttackNode : ActionPlayMode
 
         if (normalizedTime < 0.6f) // 추적 허용 구간
         {
-            //플레이어의 현재 속도를 매 프레임 갱신
             Vector3 currentVelocity = (target.position - lastPlayerPos) / Time.deltaTime;
             lastPlayerPos = target.position;
 
-            //  남은 시간만큼 미래 위치 재계산
             float remainingTime = jumpDuration - timer;
             Vector3 predictedPos = target.position + (currentVelocity * remainingTime);
 
-            // 떨림 방지용 보간
+
+            if (NavMesh.SamplePosition(predictedPos, out NavMeshHit hitUpdate, 2f, NavMesh.AllAreas))
+            {
+                predictedPos = hitUpdate.position;
+            }
+            else
+            {
+                // 맵 밖으로 뛸 것 같으면 타겟의 현재 위치로 제한
+                predictedPos = target.position;
+            }
+
             targetLandingPos = Vector3.Lerp(targetLandingPos, predictedPos, Time.deltaTime * 5f);
         }
 
@@ -142,16 +154,6 @@ public class ActionJumpAttackNode : ActionPlayMode
         // 위치 적용
         mAnimal.transform.position = currentPos;
 
-       // if (normalizedTime > 0.6f && !isLanded)
-       // {
-       //
-       //     if (Physics.Raycast(currentPos + Vector3.up * 0.5f, Vector3.down, out RaycastHit hit, 0.4f, jumpData.groundLayer))
-       //     {
-       //
-       //         blackBoard.SetBool(jumpData.isNearGroundKey, true);
-       //         return NodeState.SUCCESS; // 착지 애니메이션을 위해 아직은 RUNNING
-       //     }
-       // }
 
         if (normalizedTime >= 1.0f)
         {
