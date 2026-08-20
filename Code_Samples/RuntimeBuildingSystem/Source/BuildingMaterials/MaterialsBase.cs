@@ -39,14 +39,21 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
     {
         get
         {
-            if (requirementsCache == null && buildingData != null)
+            if (requirementsCache == null)
             {
                 requirementsCache = new Dictionary<string, int>();
-                foreach (var req in buildingData.requirements)
+                if (buildingData != null && buildingData.requirements != null)
                 {
-                    requirementsCache[req.itemName] = req.count;
+                    foreach (ResourceRequirement requirement in buildingData.requirements)
+                    {
+                        if (!string.IsNullOrWhiteSpace(requirement.itemName) && requirement.count > 0)
+                        {
+                            requirementsCache[requirement.itemName] = requirement.count;
+                        }
+                    }
                 }
             }
+
             return requirementsCache;
         }
     }
@@ -67,8 +74,8 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
     }
 
     public float MaxSupportWeight => buildingData != null ? buildingData.maxSupportWeight : 0.1f;
-    public MaterialType GetMaterialType() => buildingData.materialType;
-    public eBuildingMaterial GetBuildingMaterialType() => buildingData.buildingMaterial;
+    public MaterialType GetMaterialType() => buildingData != null ? buildingData.materialType : MaterialType.End;
+    public eBuildingMaterial GetBuildingMaterialType() => buildingData != null ? buildingData.buildingMaterial : eBuildingMaterial.End;
 
     public bool bGrounded
     {
@@ -77,11 +84,14 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
     }
 
 
-    void Start()
+    protected virtual void Start()
     {
-        buildingMaterialManagement = FindFirstObjectByType<BuildingMaterialManagement>();
-        cachedTr = this.GetComponent<Transform>();
-        cachedMat = this.GetComponent<IMaterial>();
+        if (buildingMaterialManagement == null)
+        {
+            buildingMaterialManagement = FindFirstObjectByType<BuildingMaterialManagement>();
+        }
+
+        EnsureCachedReferences();
     }
 
     private Vector3 defaultLocalPos;
@@ -162,8 +172,11 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
 
     public virtual void UpdateOffset()
     {
-        Transform tr = this.GetGameObject().transform.Find("pivotPos");
-        this.offset = tr.position - this.gameObject.transform.position;
+        Transform pivotTransform = transform.Find("pivotPos");
+        if (pivotTransform != null)
+        {
+            offset = pivotTransform.position - transform.position;
+        }
     }
 
     public virtual List<GameObject> GetAnchors()
@@ -192,10 +205,21 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
     public void ItemDrop()
     {
         if (buildingMaterialManagement == null)
+        {
+            buildingMaterialManagement = FindFirstObjectByType<BuildingMaterialManagement>();
+        }
+
+        EnsureCachedReferences();
+        if (buildingMaterialManagement == null || cachedTr == null)
+        {
             return;
+        }
 
-
-        int cnt = (Physics.OverlapSphereNonAlloc(cachedTr.position, 3.0f, cachedCollider, LayerMask.GetMask("BUILDING")));
+        int cnt = Physics.OverlapSphereNonAlloc(
+            cachedTr.position,
+            3.0f,
+            cachedCollider,
+            LayerMask.GetMask("BUILDING"));
 
 
         for (int i = 0; i < cnt; i++)
@@ -205,39 +229,42 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
             if (!BuildingColliderUtility.TryResolveMaterialRoot(col, out GameObject materialRoot, out IMaterial material))
                 continue;
 
-            if (material is Torch torch)
+            if (material is Torch torch && !torch.HasSupported(GetGameObject()))
             {
-                if (!torch.HasSupported(this.GetGameObject()))
-                {
-                    torch.OnHpEmpty();
-                }
+                // Preserve the original torch cleanup path. Torch may have project-specific
+                // pooling/destruction behavior outside this public source snapshot.
+                Destroy(materialRoot);
             }
         }
 
         List<GameObject> items = buildingMaterialManagement.GetReqMaterialItems();
+        if (items == null)
+        {
+            return;
+        }
 
         foreach (GameObject item in items)
         {
-            var itemComp = item.GetComponent<InventoryItem>();
-
-            if (itemComp == null)
+            if (item == null)
+            {
                 continue;
+            }
+
+            InventoryItem itemComp = item.GetComponent<InventoryItem>();
+            if (itemComp == null || itemComp.inventoryItem == null)
+            {
+                continue;
+            }
 
             string itemName = itemComp.inventoryItem.itemName;
 
             if (RequirementsForMat.ContainsKey(itemName) == false)
                 continue;
 
-            if (item != null)
+            int reqCount = RequirementsForMat[itemName];
+            for (int i = 0; i < reqCount; i++)
             {
-                int reqCount = RequirementsForMat[itemName];
-
-                for (int i = 0; i < reqCount; i++)
-                {
-                    dropReqirementsRandomly(item);
-                }
-
-
+                dropReqirementsRandomly(item);
             }
         }
     }
@@ -251,6 +278,11 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
 
     private void dropReqirementsRandomly(GameObject item)
     {
+        if (item == null || cachedTr == null)
+        {
+            return;
+        }
+
         Transform tr = cachedTr;
         Vector3 randomDir = tr.forward * UnityEngine.Random.Range(-1f, 1f) +
                            tr.right * UnityEngine.Random.Range(-1f, 1f) +
@@ -262,10 +294,22 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
 
         GameObject droppedItem = Instantiate(item, spawnPos, Quaternion.identity);
         Rigidbody rb = droppedItem.GetComponent<Rigidbody>();
-
-        rb.AddForce(randomDir * UnityEngine.Random.Range(2f, 3f), ForceMode.Impulse);
+        if (rb != null)
+        {
+            rb.AddForce(randomDir * UnityEngine.Random.Range(2f, 3f), ForceMode.Impulse);
+        }
     }
 
+    private void EnsureCachedReferences()
+    {
+        if (cachedTr == null)
+        {
+            cachedTr = transform;
+        }
 
-
+        if (cachedMat == null)
+        {
+            cachedMat = GetComponent<IMaterial>();
+        }
+    }
 }

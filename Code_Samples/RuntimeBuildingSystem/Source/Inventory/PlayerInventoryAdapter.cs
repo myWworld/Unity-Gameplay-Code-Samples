@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using MalbersAnimations.InventorySystem;
 using Project.Gameplay.Inventory;
 using Project.Gameplay.Items;
@@ -51,6 +52,100 @@ public class PlayerInventoryAdapter : MonoBehaviour, IInventoryAdapter
         }
 
         ConsumeLegacyItem(itemName, count);
+    }
+
+    public bool HasRequirements(IReadOnlyDictionary<string, int> requirements)
+    {
+        if (requirements == null)
+        {
+            return true;
+        }
+
+        foreach (KeyValuePair<string, int> requirement in requirements)
+        {
+            if (requirement.Value <= 0)
+            {
+                continue;
+            }
+
+            if (GetItemCount(requirement.Key) < requirement.Value)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public bool HasRequirements(IReadOnlyList<ResourceRequirement> requirements)
+    {
+        if (requirements == null)
+        {
+            return true;
+        }
+
+        for (int i = 0; i < requirements.Count; i++)
+        {
+            ResourceRequirement requirement = requirements[i];
+            if (requirement.count <= 0)
+            {
+                continue;
+            }
+
+            if (GetItemCount(requirement.itemName) < requirement.count)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public bool TryConsumeRequirements(IReadOnlyDictionary<string, int> requirements)
+    {
+        if (!HasRequirements(requirements))
+        {
+            return false;
+        }
+
+        if (requirements == null)
+        {
+            return true;
+        }
+
+        foreach (KeyValuePair<string, int> requirement in requirements)
+        {
+            if (requirement.Value > 0)
+            {
+                ConsumeItem(requirement.Key, requirement.Value);
+            }
+        }
+
+        return true;
+    }
+
+    public bool TryConsumeRequirements(IReadOnlyList<ResourceRequirement> requirements)
+    {
+        if (!HasRequirements(requirements))
+        {
+            return false;
+        }
+
+        if (requirements == null)
+        {
+            return true;
+        }
+
+        for (int i = 0; i < requirements.Count; i++)
+        {
+            ResourceRequirement requirement = requirements[i];
+            if (requirement.count > 0)
+            {
+                ConsumeItem(requirement.itemName, requirement.count);
+            }
+        }
+
+        return true;
     }
 
     private bool TryGetUnifiedItemCount(string itemName, out int count)

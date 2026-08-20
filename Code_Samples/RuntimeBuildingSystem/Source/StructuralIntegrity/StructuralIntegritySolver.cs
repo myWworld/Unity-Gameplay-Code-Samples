@@ -5,193 +5,399 @@ using UnityEngine.Profiling;
 
 public class StructuralIntegritySolver : MonoBehaviour
 {
+    [Header("Dependencies")]
     public BuildingMaterialManagement buildingMaterialManagement;
+
+    [Header("Support Settings")]
+    [SerializeField, Min(0f)] private float baseSupportValue = 1.2f;
+    [SerializeField, Min(0f)] private float minimumSupportValue = 0.25f;
+    [SerializeField, Range(0f, 1f)] private float defaultDecay = 0.75f;
+    [SerializeField, Range(0f, 1f)] private float verticalSupportDecay = 0.945f;
+    [SerializeField, Range(0f, 1f)] private float angledSupportDecay = 0.94f;
+    [SerializeField, Range(0f, 1f)] private float horizontalSupportDecay = 0.93f;
+    [SerializeField, Min(0.01f)] private float connectionRadius = 0.4f;
+    [SerializeField, Min(0f)] private float collapseDelay = 0.15f;
+    [SerializeField, Min(0f)] private float propagationEpsilon = 0.0001f;
+
+    [Header("Physics Query Capacity")]
+    [SerializeField, Min(8)] private int queryCapacity = 50;
 
     private readonly HashSet<IMaterial> cluster = new HashSet<IMaterial>();
     private readonly Queue<IMaterial> bfsQueue = new Queue<IMaterial>();
     private readonly Queue<IMaterial> removalQueue = new Queue<IMaterial>();
+    private readonly Queue<IMaterial> pendingCollapseQueue = new Queue<IMaterial>();
+    private readonly HashSet<IMaterial> pendingCollapseSet = new HashSet<IMaterial>();
     private readonly List<IMaterial> neighbors = new List<IMaterial>();
-    private readonly List<IMaterial> currNeighbors = new List<IMaterial>();
-    private readonly List<IMaterial> neighborsGather = new List<IMaterial>();
+    private readonly List<IMaterial> currentNeighbors = new List<IMaterial>();
+    private readonly List<IMaterial> gatherNeighbors = new List<IMaterial>();
 
-    private readonly Collider[] hitColliders = new Collider[50];
+    private Collider[] hitColliders;
     private int buildingLayerMask;
+    private Coroutine collapseRoutine;
+    private bool hasLoggedQueryCapacityWarning;
 
-    void Awake()
+    public float BaseSupportValue => baseSupportValue;
+    public float MinimumSupportValue => minimumSupportValue;
+
+    private void Awake()
     {
         buildingLayerMask = LayerAndTagConstants.Mask_BuildingAndDoor;
-        buildingMaterialManagement = GetComponent<BuildingMaterialManagement>();
-    }
-    public float PredictSupportValue(Vector3 previewPos, GameObject previewObj, BuildingMaterialManagement manager)
-    {
-        if (previewObj == null) return 0f;
+        EnsureQueryBuffer();
 
-        IMaterial previewMat = previewObj.GetComponent<IMaterial>();
-
-
-        if (manager.IsTouchingGroundAt(previewPos, previewObj))
+        if (buildingMaterialManagement == null)
         {
-            return 1.2f; // 땅에 닿으면 즉시 통과
+            buildingMaterialManagement = GetComponent<BuildingMaterialManagement>();
+        }
+    }
+
+    private void OnValidate()
+    {
+        baseSupportValue = Mathf.Max(0f, baseSupportValue);
+        minimumSupportValue = Mathf.Max(0f, minimumSupportValue);
+        defaultDecay = Mathf.Clamp01(defaultDecay);
+        verticalSupportDecay = Mathf.Clamp01(verticalSupportDecay);
+        angledSupportDecay = Mathf.Clamp01(angledSupportDecay);
+        horizontalSupportDecay = Mathf.Clamp01(horizontalSupportDecay);
+        connectionRadius = Mathf.Max(0.01f, connectionRadius);
+        collapseDelay = Mathf.Max(0f, collapseDelay);
+        propagationEpsilon = Mathf.Max(0f, propagationEpsilon);
+        queryCapacity = Mathf.Max(8, queryCapacity);
+    }
+
+    private void OnDisable()
+    {
+        if (collapseRoutine != null)
+        {
+            StopCoroutine(collapseRoutine);
+            collapseRoutine = null;
         }
 
-        Vector3 positionOffset = previewPos - previewObj.transform.position;
-        List<GameObject> anchors = previewMat.GetAnchors();
+        pendingCollapseQueue.Clear();
+        pendingCollapseSet.Clear();
+    }
 
-        float maxPredictedSupport = 0f;
-
-        foreach (var anchor in anchors)
+    public void InitializeDependencies(BuildingMaterialManagement manager)
+    {
+        if (manager != null)
         {
-            if (anchor == null) continue;
+            buildingMaterialManagement = manager;
+        }
 
-            // 앵커가 실제로 배치될 미래 위치 계산
-            Vector3 futureAnchorPos = anchor.transform.position + positionOffset;
+        EnsureQueryBuffer();
+    }
 
-            int hitCnt = Physics.OverlapSphereNonAlloc(futureAnchorPos, 0.4f, hitColliders, buildingLayerMask);
+    public float PredictSupportValue(
+        Vector3 previewPosition,
+        GameObject previewObject,
+        BuildingMaterialManagement manager)
+    {
+        if (previewObject == null)
+        {
+            return 0f;
+        }
 
-            for (int i = 0; i < hitCnt; i++)
+        manager = manager != null ? manager : buildingMaterialManagement;
+        if (manager == null || !previewObject.TryGetComponent(out IMaterial previewMaterial))
+        {
+            return 0f;
+        }
+
+        if (manager.IsTouchingGroundAt(previewPosition, previewObject))
+        {
+            return baseSupportValue;
+        }
+
+        List<GameObject> anchors = previewMaterial.GetAnchors();
+        if (anchors == null || anchors.Count == 0)
+        {
+            return 0f;
+        }
+
+        EnsureQueryBuffer();
+        Vector3 positionOffset = previewPosition - previewObject.transform.position;
+        float maximumPredictedSupport = 0f;
+
+        for (int anchorIndex = 0; anchorIndex < anchors.Count; anchorIndex++)
+        {
+            GameObject anchor = anchors[anchorIndex];
+            if (anchor == null)
             {
-                Collider col = hitColliders[i];
+                continue;
+            }
 
-                // 프리뷰 오브젝트 자신은 제외
-                if (BuildingColliderUtility.IsSelfOrProxyOf(col, previewObj)) continue;
+            Vector3 futureAnchorPosition = anchor.transform.position + positionOffset;
+            int hitCount = Physics.OverlapSphereNonAlloc(
+                futureAnchorPosition,
+                connectionRadius,
+                hitColliders,
+                buildingLayerMask);
+            WarnIfQueryBufferIsFull(hitCount);
 
-                if (BuildingColliderUtility.TryResolveMaterialRoot(col, out _, out IMaterial neighborMat))
+            for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
+            {
+                Collider collider = hitColliders[hitIndex];
+                if (collider == null || BuildingColliderUtility.IsSelfOrProxyOf(collider, previewObject))
                 {
-                    // 이웃의 지지력
-                    float neighborSupport = neighborMat.SupportValue;
+                    continue;
+                }
 
-                    // 이웃에서 나에게 하중을 전달할 때의 감쇠율 적용
-                    float decay = GetDecayValueByMType(neighborMat);
-                    float predicted = neighborSupport * decay;
+                if (!BuildingColliderUtility.TryResolveMaterialRoot(
+                        collider,
+                        out _,
+                        out IMaterial neighborMaterial) ||
+                    neighborMaterial == null)
+                {
+                    continue;
+                }
 
-                    // 연결될 여러 이웃 중 가장 높은 지지력을 제공하는 값을 채택
-                    if (predicted > maxPredictedSupport)
-                    {
-                        maxPredictedSupport = predicted;
-                    }
+                float predictedSupport =
+                    neighborMaterial.SupportValue * GetDecayValueByMaterialType(neighborMaterial);
+                if (predictedSupport > maximumPredictedSupport)
+                {
+                    maximumPredictedSupport = predictedSupport;
                 }
             }
         }
 
-        return maxPredictedSupport; // 예상 지지력 반환
+        return maximumPredictedSupport;
     }
 
-    public void HandleMaterialPlacement(IMaterial placedMat)
+    public void HandleMaterialPlacement(IMaterial placedMaterial)
     {
-        if (placedMat == null || placedMat.GetGameObject() == null) return;
+        if (!IsValidMaterial(placedMaterial))
+        {
+            return;
+        }
 
         bfsQueue.Clear();
-        bfsQueue.Enqueue(placedMat);
-
-        while (bfsQueue.Count > 0)
-        {
-            IMaterial curr = bfsQueue.Dequeue();
-            float currSupport = curr.SupportValue;
-
-            neighbors.Clear();
-
-            neighbors.AddRange(curr.ConnectedChildren);
-            neighbors.AddRange(curr.Parents);
-
-            foreach (var next in neighbors)
-            {
-                if (next == null || next.GetGameObject() == null) continue;
-
-
-                float decay = GetDecayValueByMType(curr);
-                float offeredSupport = currSupport * decay;
-
-
-                if (offeredSupport > next.SupportValue)
-                {
-                    next.SupportValue = offeredSupport;
-                    bfsQueue.Enqueue(next);
-                }
-            }
-        }
+        bfsQueue.Enqueue(placedMaterial);
+        PropagateMaximumSupport(bfsQueue);
     }
 
-    public void HandleMaterialPropagate(IMaterial targetMat, BuildingMaterialManagement manager, bool IsDecrease = false, float minSupport = 0.25f)
+    public void HandleMaterialPropagate(
+        IMaterial targetMaterial,
+        BuildingMaterialManagement manager,
+        bool isDecrease = false,
+        float minSupport = -1f)
     {
-        if (targetMat == null) return;
+        if (!IsValidMaterial(targetMaterial))
+        {
+            return;
+        }
+
+        manager = manager != null ? manager : buildingMaterialManagement;
+        if (manager == null)
+        {
+            return;
+        }
+
+        float supportThreshold = minSupport >= 0f ? minSupport : minimumSupportValue;
 
         cluster.Clear();
         bfsQueue.Clear();
         removalQueue.Clear();
         neighbors.Clear();
-        currNeighbors.Clear();
+        currentNeighbors.Clear();
 
-        neighbors.AddRange(targetMat.ConnectedChildren);
-        neighbors.AddRange(targetMat.Parents);
+        AddNeighbors(targetMaterial, neighbors);
 
-        if (IsDecrease)
-            neighbors.Add(targetMat);
-        else
-            RemoveTargetFromItsParentAndChild(targetMat);
-
-        foreach (var neighbor in neighbors)
+        if (isDecrease)
         {
-            if (neighbor != null && neighbor.GetGameObject() != null && !cluster.Contains(neighbor))
+            neighbors.Add(targetMaterial);
+        }
+        else
+        {
+            RemoveTargetFromItsParentAndChild(targetMaterial);
+        }
+
+        for (int i = 0; i < neighbors.Count; i++)
+        {
+            IMaterial neighbor = neighbors[i];
+            if (IsValidMaterial(neighbor) && !cluster.Contains(neighbor))
             {
-                GatherCluster(neighbor, cluster);
+                GatherCluster(neighbor);
             }
         }
 
-        foreach (var mat in cluster)//모든 자재담아온 후 지지력 0으로 만듦
+        foreach (IMaterial material in cluster)
         {
-            mat.SupportValue = 0f;
+            material.SupportValue = 0f;
         }
 
-        foreach (var mat in cluster)
+        foreach (IMaterial material in cluster)
         {
-            if (manager.IsTouchingGround(mat.GetGameObject()))//땅에 지지가 되는 애들은 베이스 지지력 받음과 동시에 bfs에서 시작점이 된다
+            if (manager.IsTouchingGround(material.GetGameObject()))
             {
-                mat.SupportValue = 1.2f; // GetBaseSupport
-                bfsQueue.Enqueue(mat);
+                material.SupportValue = baseSupportValue;
+                bfsQueue.Enqueue(material);
             }
         }
 
         Profiler.BeginSample("Support Propagation BFS");
-        while (bfsQueue.Count > 0)//지지력 재계산
+        PropagateMaximumSupport(bfsQueue);
+        Profiler.EndSample();
+
+        foreach (IMaterial material in cluster)
         {
-            IMaterial curr = bfsQueue.Dequeue();
-            float currSupport = curr.SupportValue;
-            currNeighbors.Clear();
-            currNeighbors.AddRange(curr.ConnectedChildren);
-            currNeighbors.AddRange(curr.Parents);
-
-            foreach (var next in currNeighbors)
+            if (material.SupportValue < supportThreshold)
             {
-                if (next == null || next.GetGameObject() == null) continue;
+                removalQueue.Enqueue(material);
+            }
+        }
 
-                float decay = GetDecayValueByMType(curr);
-                float nextSupport = currSupport * decay;
+        EnqueueCollapses(removalQueue);
+    }
 
-                if (nextSupport > next.SupportValue)
+    public void RemoveTargetFromItsParentAndChild(IMaterial material)
+    {
+        if (material == null)
+        {
+            return;
+        }
+
+        List<IMaterial> children = material.ConnectedChildren;
+        if (children != null)
+        {
+            for (int i = 0; i < children.Count; i++)
+            {
+                IMaterial child = children[i];
+                child?.Parents?.Remove(material);
+            }
+        }
+
+        List<IMaterial> parents = material.Parents;
+        if (parents != null)
+        {
+            for (int i = 0; i < parents.Count; i++)
+            {
+                IMaterial parent = parents[i];
+                parent?.ConnectedChildren?.Remove(material);
+            }
+        }
+
+        children?.Clear();
+        parents?.Clear();
+    }
+
+    public void ClearParentAndChildren(IMaterial material)
+    {
+        RemoveTargetFromItsParentAndChild(material);
+    }
+
+    public void UpdateParentsAndChildren(IMaterial newMaterial)
+    {
+        if (!IsValidMaterial(newMaterial))
+        {
+            return;
+        }
+
+        GameObject targetObject = newMaterial.GetGameObject();
+        List<GameObject> anchors = newMaterial.GetAnchors();
+        if (anchors == null || anchors.Count == 0)
+        {
+            return;
+        }
+
+        EnsureQueryBuffer();
+
+        for (int anchorIndex = 0; anchorIndex < anchors.Count; anchorIndex++)
+        {
+            GameObject anchor = anchors[anchorIndex];
+            if (anchor == null)
+            {
+                continue;
+            }
+
+            int hitCount = Physics.OverlapSphereNonAlloc(
+                anchor.transform.position,
+                connectionRadius,
+                hitColliders,
+                buildingLayerMask);
+            WarnIfQueryBufferIsFull(hitCount);
+
+            for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
+            {
+                Collider collider = hitColliders[hitIndex];
+                if (collider == null || BuildingColliderUtility.IsSelfOrProxyOf(collider, targetObject))
                 {
-                    next.SupportValue = nextSupport;
-                    bfsQueue.Enqueue(next);
+                    continue;
+                }
+
+                if (!BuildingColliderUtility.TryResolveMaterialRoot(
+                        collider,
+                        out GameObject materialRoot,
+                        out IMaterial neighborMaterial) ||
+                    materialRoot == null || neighborMaterial == null)
+                {
+                    continue;
+                }
+
+                float deltaY = materialRoot.transform.position.y - targetObject.transform.position.y;
+                if (Mathf.Abs(deltaY) <= 0.05f)
+                {
+                    ConnectParentAndChild(neighborMaterial, newMaterial);
+                }
+                else if (deltaY > 0.05f)
+                {
+                    ConnectParentAndChild(newMaterial, neighborMaterial);
+                }
+                else
+                {
+                    ConnectParentAndChild(neighborMaterial, newMaterial);
                 }
             }
         }
-        Profiler.EndSample();
+    }
 
-        foreach (var mat in cluster)//지지력 업데이트 된 애들 중 최소 지지력 보다 작은 애들 다 지우기
+    public void ConnectParentAndChild(IMaterial parent, IMaterial child)
+    {
+        if (parent == null || child == null || parent == child)
         {
-            if (mat.SupportValue < minSupport)
-            {
-                removalQueue.Enqueue(mat);
-            }
+            return;
         }
 
-        if (removalQueue.Count > 0)
+        if (!parent.ConnectedChildren.Contains(child))
         {
-            Queue<IMaterial> queueSnapshot = new Queue<IMaterial>(removalQueue);
-            StartCoroutine(CollapseWithDelay(queueSnapshot, 0.15f));
+            parent.ConnectedChildren.Add(child);
+        }
+
+        if (!child.Parents.Contains(parent))
+        {
+            child.Parents.Add(parent);
         }
     }
 
-    private void GatherCluster(IMaterial startNode, HashSet<IMaterial> cluster)
+    private void PropagateMaximumSupport(Queue<IMaterial> queue)
+    {
+        while (queue.Count > 0)
+        {
+            IMaterial current = queue.Dequeue();
+            if (!IsValidMaterial(current))
+            {
+                continue;
+            }
+
+            float offeredSupport =
+                current.SupportValue * GetDecayValueByMaterialType(current);
+            currentNeighbors.Clear();
+            AddNeighbors(current, currentNeighbors);
+
+            for (int i = 0; i < currentNeighbors.Count; i++)
+            {
+                IMaterial next = currentNeighbors[i];
+                if (!IsValidMaterial(next) ||
+                    offeredSupport <= next.SupportValue + propagationEpsilon)
+                {
+                    continue;
+                }
+
+                next.SupportValue = offeredSupport;
+                queue.Enqueue(next);
+            }
+        }
+    }
+
+    private void GatherCluster(IMaterial startNode)
     {
         bfsQueue.Clear();
         bfsQueue.Enqueue(startNode);
@@ -199,65 +405,77 @@ public class StructuralIntegritySolver : MonoBehaviour
 
         while (bfsQueue.Count > 0)
         {
-            var curr = bfsQueue.Dequeue();
-            neighborsGather.Clear();
-            neighborsGather.AddRange(curr.ConnectedChildren);
-            neighborsGather.AddRange(curr.Parents);
+            IMaterial current = bfsQueue.Dequeue();
+            gatherNeighbors.Clear();
+            AddNeighbors(current, gatherNeighbors);
 
-            foreach (var link in neighborsGather)
+            for (int i = 0; i < gatherNeighbors.Count; i++)
             {
-                if (link != null && link.GetGameObject() != null && !cluster.Contains(link))
+                IMaterial linkedMaterial = gatherNeighbors[i];
+                if (IsValidMaterial(linkedMaterial) && cluster.Add(linkedMaterial))
                 {
-                    cluster.Add(link);
-                    bfsQueue.Enqueue(link);
+                    bfsQueue.Enqueue(linkedMaterial);
                 }
             }
         }
     }
 
-    private IEnumerator CollapseWithDelay(Queue<IMaterial> queue, float delay)
+    private void EnqueueCollapses(Queue<IMaterial> collapsedMaterials)
     {
-        while (queue.Count > 0)
+        while (collapsedMaterials.Count > 0)
         {
-            IMaterial target = queue.Dequeue();
-            if (target == null || target.GetGameObject() == null) continue;
+            IMaterial material = collapsedMaterials.Dequeue();
+            if (IsValidMaterial(material) && pendingCollapseSet.Add(material))
+            {
+                pendingCollapseQueue.Enqueue(material);
+            }
+        }
 
-            //Debug.Log($"건축물 붕괴: {target.GetGameObject().name}");
-            RemoveTargetFromItsParentAndChild(target);
-            buildingMaterialManagement.DestroyProcess(target);
-            yield return new WaitForSeconds(delay);
+        if (pendingCollapseQueue.Count > 0 && collapseRoutine == null)
+        {
+            collapseRoutine = StartCoroutine(CollapsePendingWithDelay());
         }
     }
 
-    public void RemoveTargetFromItsParentAndChild(IMaterial newIMaterial)
+    private IEnumerator CollapsePendingWithDelay()
     {
-        if (newIMaterial == null) return;
+        WaitForSeconds wait = collapseDelay > 0f ? new WaitForSeconds(collapseDelay) : null;
 
-        foreach (IMaterial child in newIMaterial.ConnectedChildren)
+        while (pendingCollapseQueue.Count > 0)
         {
-            if (child != null) child.Parents.Remove(newIMaterial);
+            IMaterial target = pendingCollapseQueue.Dequeue();
+            pendingCollapseSet.Remove(target);
+
+            if (IsValidMaterial(target) && target.SupportValue < minimumSupportValue)
+            {
+                // A delayed collapse can be cancelled naturally if a newly placed support
+                // restores this material before its turn in the queue.
+                RemoveTargetFromItsParentAndChild(target);
+                buildingMaterialManagement?.DestroyProcess(target);
+            }
+
+            if (wait != null)
+            {
+                yield return wait;
+            }
+            else
+            {
+                yield return null;
+            }
         }
-        foreach (IMaterial parent in newIMaterial.Parents)
-        {
-            if (parent != null) parent.ConnectedChildren.Remove(newIMaterial);
-        }
+
+        collapseRoutine = null;
     }
 
-    float GetBaseSupport(IMaterial mat)
+    private float GetDecayValueByMaterialType(IMaterial material)
     {
-        return 1.2f;
-    }
-
-    private float GetDecayValueByMType(IMaterial mat)
-    {
-        switch (mat.GetBuildingMaterialType())
+        switch (material.GetBuildingMaterialType())
         {
             case eBuildingMaterial.Pole:
             case eBuildingMaterial.HalfPole:
             case eBuildingMaterial.BaseRockBig:
             case eBuildingMaterial.BaseRockSmall:
-
-                return 0.945f;
+                return verticalSupportDecay;
 
             case eBuildingMaterial.HalfPole25:
             case eBuildingMaterial.HalfPole45:
@@ -265,107 +483,60 @@ public class StructuralIntegritySolver : MonoBehaviour
             case eBuildingMaterial.Pole25:
             case eBuildingMaterial.Pole45:
             case eBuildingMaterial.Pole65:
-
-                return 0.94f;
+                return angledSupportDecay;
 
             case eBuildingMaterial.Pole90:
             case eBuildingMaterial.HalfPole90:
-
-                return 0.93f;
+                return horizontalSupportDecay;
 
             default:
-                return 0.75f;
+                return defaultDecay;
         }
     }
 
-    public void ClearParentAndChildren(IMaterial newIMaterial)
+    private void AddNeighbors(IMaterial material, List<IMaterial> destination)
     {
-        if (newIMaterial == null)
+        if (material == null || destination == null)
+        {
             return;
-
-        foreach (IMaterial child in newIMaterial.ConnectedChildren)
-        {
-            if (child != null)
-            {
-                child.Parents.Remove(newIMaterial);
-            }
         }
 
-        foreach (IMaterial parent in newIMaterial.Parents)
+        if (material.ConnectedChildren != null)
         {
-            if (parent != null)
-            {
-                parent.ConnectedChildren.Remove(newIMaterial);
-            }
+            destination.AddRange(material.ConnectedChildren);
         }
 
-        newIMaterial.Parents.Clear();
-        newIMaterial.ConnectedChildren.Clear();
+        if (material.Parents != null)
+        {
+            destination.AddRange(material.Parents);
+        }
     }
 
-
-    public void UpdateParentsAndChildren(IMaterial newIMaterial)
+    private void EnsureQueryBuffer()
     {
-
-
-        if (newIMaterial == null)
-            return;
-
-        GameObject targetObj = newIMaterial.GetGameObject();
-        if (targetObj == null)
-            return;
-
-        foreach (GameObject anchor in newIMaterial.GetAnchors())
+        int capacity = Mathf.Max(8, queryCapacity);
+        if (hitColliders == null || hitColliders.Length != capacity)
         {
-
-
-            Vector3 anchorPos = anchor.transform.position;
-            int hitCount = Physics.OverlapSphereNonAlloc(anchorPos, 0.4f, hitColliders, buildingLayerMask);
-
-            for (int i = 0; i < hitCount; i++)
-            {
-                Collider col = hitColliders[i];
-
-                if (BuildingColliderUtility.IsSelfOrProxyOf(col, targetObj))
-                    continue;
-
-                if (!BuildingColliderUtility.TryResolveMaterialRoot(col, out GameObject materialRoot, out IMaterial imat))
-                    continue;
-
-                float deltaY = materialRoot.transform.position.y - targetObj.transform.position.y;
-
-                if (Mathf.Abs(deltaY) <= 0.05f) //높이 비슷할 경우 먼저있던애가 부모
-                {
-                    ConnectParentAndChild(imat, newIMaterial);
-                }
-                else if (deltaY > 0.05)
-                {
-                    ConnectParentAndChild(newIMaterial, imat);
-
-                }
-                else
-                {
-                    // 아래에 있음 → 내가 자식
-
-                    ConnectParentAndChild(imat, newIMaterial);
-
-                }
-            }
+            hitColliders = new Collider[capacity];
+            hasLoggedQueryCapacityWarning = false;
         }
-
     }
 
-    public void ConnectParentAndChild(IMaterial parent, IMaterial child)
+    private void WarnIfQueryBufferIsFull(int hitCount)
     {
-        if (parent == null || child == null || parent == child) return;
-
-        //  UnityEngine.Debug.Log($"부모는{parent.GetGameObject().name} 자식은{child.GetGameObject().name}");
-
-        if (!parent.ConnectedChildren.Contains(child))
-            parent.ConnectedChildren.Add(child);
-
-        if (!child.Parents.Contains(parent))
-            child.Parents.Add(parent);
+        if (!hasLoggedQueryCapacityWarning &&
+            hitColliders != null &&
+            hitCount >= hitColliders.Length)
+        {
+            Debug.LogWarning(
+                $"[StructuralIntegritySolver] Physics query filled its {hitColliders.Length}-collider buffer. " +
+                "Increase Query Capacity to avoid truncated neighbor results.");
+            hasLoggedQueryCapacityWarning = true;
+        }
     }
 
+    private static bool IsValidMaterial(IMaterial material)
+    {
+        return material != null && material.GetGameObject() != null;
+    }
 }

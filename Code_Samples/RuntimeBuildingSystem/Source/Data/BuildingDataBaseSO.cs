@@ -1,5 +1,5 @@
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
 
 [CreateAssetMenu(fileName = "NewBuildingData", menuName = "Building System/BuildingDataBaseSO")]
 public class BuildingDataBaseSO : ScriptableObject
@@ -9,33 +9,51 @@ public class BuildingDataBaseSO : ScriptableObject
 
     private Dictionary<eBuildingMaterial, BuildingDataSO> buildingDataCache;
 
-    private void InitializeCache()
+    private void OnEnable()
     {
-        if (buildingDataCache != null) return;
+        buildingDataCache = null;
+    }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        buildingDataCache = null;
+    }
+#endif
+
+    public BuildingDataSO GetBuildingData(eBuildingMaterial buildingMaterial)
+    {
+        EnsureCache();
+        if (buildingDataCache.TryGetValue(buildingMaterial, out BuildingDataSO data))
+        {
+            return data;
+        }
+
+        Debug.LogWarning(
+            $"[BuildingDataBaseSO] Building material ({buildingMaterial}) is not registered.");
+        return null;
+    }
+
+    private void EnsureCache()
+    {
+        if (buildingDataCache != null)
+        {
+            return;
+        }
 
         buildingDataCache = new Dictionary<eBuildingMaterial, BuildingDataSO>();
-        foreach (var data in BuildingDatas)
+        if (BuildingDatas == null)
         {
+            return;
+        }
+
+        for (int i = 0; i < BuildingDatas.Count; i++)
+        {
+            BuildingDataSO data = BuildingDatas[i];
             if (data != null && !buildingDataCache.ContainsKey(data.buildingMaterial))
             {
                 buildingDataCache.Add(data.buildingMaterial, data);
             }
         }
     }
-
-
-
-    public BuildingDataSO GetBuildingData(eBuildingMaterial buildingMaterial)
-    {
-        InitializeCache();
-
-        if (buildingDataCache.TryGetValue(buildingMaterial, out BuildingDataSO data))
-        {
-            return data;
-        }
-
-        UnityEngine.Debug.LogWarning($"[BuildingDataBaseSO] 해당 자재({buildingMaterial})가 데이터베이스에 등록되어 있지 않습니다");
-        return null;
-    }
-
 }

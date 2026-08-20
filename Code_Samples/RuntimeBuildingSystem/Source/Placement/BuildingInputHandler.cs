@@ -6,31 +6,73 @@ public class BuildingInputHandler : MonoBehaviour
     public Transform playerTransform;
     [SerializeField] private PlayerBuildingController playerBuildingController;
 
+    [Header("Action Input")]
+    [SerializeField] private int placeMouseButton = 0;
+    [SerializeField] private int secondaryActionMouseButton = 1;
+    [SerializeField] private KeyCode toggleSnapModeKey = KeyCode.Q;
+    [SerializeField] private KeyCode cycleSnapPointKey = KeyCode.E;
+    [SerializeField, Min(1f)] private float rotationStep = 15f;
+
     public Vector3 MousePos { get; private set; }
     public RaycastHit CurHitData { get; private set; }
     public GameObject RayCastedObject { get; private set; }
 
-    private Vector3 lastMousePos = Vector3.zero;
+    public bool WasPlacePressed => Input.GetMouseButtonDown(placeMouseButton);
+    public bool WasSecondaryActionPressed => Input.GetMouseButtonDown(secondaryActionMouseButton);
+    public bool WasToggleSnapModePressed => Input.GetKeyDown(toggleSnapModeKey);
+    public bool WasCycleSnapPointPressed => Input.GetKeyDown(cycleSnapPointKey);
 
-    void Awake()
+    private void Awake()
     {
-        if (playerTransform == null)
+        ResolveDependencies();
+    }
+
+    public void InitializePlayer(Transform player)
+    {
+        if (player != null)
         {
-            GameObject player = GameObject.FindWithTag("Player");
-            if (player != null) playerTransform = player.transform;
+            playerTransform = player;
         }
 
-        if (playerBuildingController == null)
-        {
-            playerBuildingController = FindFirstObjectByType<PlayerBuildingController>();
-        }
+        ResolveDependencies();
     }
 
     public void UpdateInputData()
     {
         MousePos = GetMousePos();
+
+        if (Mouse3D.Instance == null)
+        {
+            CurHitData = default(RaycastHit);
+            RayCastedObject = null;
+            return;
+        }
+
         CurHitData = Mouse3D.GetHiDataFromRaycast();
         RayCastedObject = CurHitData.collider != null ? CurHitData.collider.gameObject : null;
+    }
+
+    public bool IsAnyKeyHeld(KeyCode primary, KeyCode secondary)
+    {
+        bool primaryHeld = primary != KeyCode.None && Input.GetKey(primary);
+        bool secondaryHeld = secondary != KeyCode.None && Input.GetKey(secondary);
+        return primaryHeld || secondaryHeld;
+    }
+
+    public float GetRotationInput()
+    {
+        if (playerBuildingController != null && playerBuildingController.ShouldRouteBuildingScrollToCameraZoom)
+        {
+            return 0f;
+        }
+
+        float scroll = Input.GetAxis("Mouse ScrollWheel");
+        if (Mathf.Approximately(scroll, 0f))
+        {
+            return 0f;
+        }
+
+        return (scroll > 0f ? 1f : -1f) * rotationStep;
     }
 
     private Vector3 GetMousePos()
@@ -43,19 +85,20 @@ public class BuildingInputHandler : MonoBehaviour
         return playerTransform != null ? playerTransform.position : Vector3.zero;
     }
 
-
-    public float GetRotationInput()
+    private void ResolveDependencies()
     {
-        if (playerBuildingController != null && playerBuildingController.ShouldRouteBuildingScrollToCameraZoom)
+        if (playerTransform == null)
         {
-            return 0f;
+            GameObject player = GameObject.FindWithTag("Player");
+            if (player != null)
+            {
+                playerTransform = player.transform;
+            }
         }
 
-        float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (scroll != 0f)
+        if (playerBuildingController == null)
         {
-            return (scroll > 0 ? 1 : -1) * 15f; // Rotate in 15-degree increments.
+            playerBuildingController = FindFirstObjectByType<PlayerBuildingController>();
         }
-        return 0f;
     }
 }

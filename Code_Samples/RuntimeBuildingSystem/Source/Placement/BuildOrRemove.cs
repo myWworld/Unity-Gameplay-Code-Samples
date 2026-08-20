@@ -1,68 +1,40 @@
-
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Low-level world commit and visual feedback component.
+/// High-level placement/removal orchestration lives in BuildingPlacementService and BuildingRemovalService.
+/// </summary>
 public class BuildOrRemove : MonoBehaviour
 {
-
-    private SnapController snapController = null;
-    private Color originalColor;
-    private Color removeOrigColor; // Original color of the removal candidate.
-
-    private Dictionary<string, Material> materials;
-    // Material instances are avoided here; highlight feedback is applied through layers/property blocks.
-
-    private MaterialPropertyBlock propertyBlock;
-
-
-    private PartialNavMeshBuilder partialNavMeshBuilder;
-
-    public GameObject previewObject; // Currently displayed placement preview.
-    private IMaterial previewIMaterial; // Cached material interface for the preview object.
-    private GameObject highlightedObject;
-
-    public GameObject removeCandidate; // Object currently highlighted as removable.
-    private GameObject removeObject; // Confirmed removal target.
-
-
-    private Vector3 lastSnapPosition; // Last committed snap position.
-
-    BuildingMaterialManagement buildingMaterialManagement = null;
-    StructuralIntegritySolver structuralIntegritySolver = null;
-
     [Header("Integrity Colors (Hologram)")]
+    public Color maxSupportColor = new Color(0.2f, 1f, 0.5f, 0.45f);
+    public Color midSupportColor = new Color(1f, 0.9f, 0.2f, 0.45f);
+    public Color minSupportColor = new Color(1f, 0.4f, 0.4f, 0.45f);
+
+    public GameObject previewObject;
+    public GameObject removeCandidate;
+
+    private SnapController snapController;
+    private PartialNavMeshBuilder partialNavMeshBuilder;
+    private BuildingMaterialManagement buildingMaterialManagement;
+    private StructuralIntegritySolver structuralIntegritySolver;
+
+    private GameObject highlightedObject;
+    private MaterialPropertyBlock propertyBlock;
 
     private int layerGreen;
     private int layerYellow;
     private int layerRed;
     private int layerBlue;
 
-    private int originalLayerForRemovable = -1;
-    private int originalLayer = -1;
-    // 아주 밝은 형광 연두색
-    public Color maxSupportColor = new Color(0.2f, 1.0f, 0.5f, 0.45f);
+    private readonly LayerHighlightState previewHighlight = new LayerHighlightState();
+    private readonly LayerHighlightState removalHighlight = new LayerHighlightState();
 
-    // 밝은 레몬/파스텔 노란색
-    public Color midSupportColor = new Color(1.0f, 0.9f, 0.2f, 0.45f);
-
-    // 칙칙하지 않은 밝은 파스텔 빨간색
-    public Color minSupportColor = new Color(1.0f, 0.4f, 0.4f, 0.45f);
-
-    void Start()
+    private void Awake()
     {
-        buildingMaterialManagement = GetComponent<BuildingMaterialManagement>();
-        structuralIntegritySolver = GetComponent<StructuralIntegritySolver>();
-        partialNavMeshBuilder = this.GetComponent<PartialNavMeshBuilder>();
-        snapController = GetComponent<SnapController>();
-        materials = new Dictionary<string, Material>();
-
-        if (snapController == null)
-            UnityEngine.Debug.LogWarning("[BuildOrRemove] SnapController dependency was not found.");
-
-        if (buildingMaterialManagement == null)
-            UnityEngine.Debug.LogWarning("[BuildOrRemove] BuildingMaterialManagement dependency was not found.");
-
-        StoreMaterial();
+        ResolveDependencies();
+        propertyBlock = new MaterialPropertyBlock();
 
         layerGreen = LayerAndTagConstants.Layer_HighlightGreen;
         layerRed = LayerAndTagConstants.Layer_HighlightRed;
@@ -70,296 +42,375 @@ public class BuildOrRemove : MonoBehaviour
         layerBlue = LayerAndTagConstants.Layer_HighlightBlue;
     }
 
-    private void StoreMaterial()
+    private void OnDisable()
     {
-        var parentPrefabs = buildingMaterialManagement.GetBuildingPrefabs();
-        propertyBlock = new MaterialPropertyBlock();
+        previewHighlight.Restore();
+        removalHighlight.Restore();
+        highlightedObject = null;
+        removeCandidate = null;
+    }
 
-        foreach (var pair in parentPrefabs)
+    public void InitializeDependencies(
+        BuildingMaterialManagement materialManagement,
+        StructuralIntegritySolver integritySolver,
+        SnapController snap,
+        PartialNavMeshBuilder navMeshBuilder = null)
+    {
+        if (materialManagement != null)
         {
+            buildingMaterialManagement = materialManagement;
+        }
 
-            BuildingDataSO data = pair.Key;
+        if (integritySolver != null)
+        {
+            structuralIntegritySolver = integritySolver;
+        }
 
-            IMaterial imat = data.prefab.GetComponent<IMaterial>();
+        if (snap != null)
+        {
+            snapController = snap;
+        }
 
-            if (imat != null && imat.GetVisualMesh() != null)
-            {
-                if (imat.MaterialRenderers.Count > 0)
-                {
-                    foreach (var rend in imat.MaterialRenderers)
-                    {
-
-                        materials[data.materialName] = rend.sharedMaterial;
-
-                        break;//같은 머테리얼을 공유함
-                    }
-                }
-            }
-
-
+        if (navMeshBuilder != null)
+        {
+            partialNavMeshBuilder = navMeshBuilder;
+        }
+        else if (partialNavMeshBuilder == null)
+        {
+            partialNavMeshBuilder = GetComponent<PartialNavMeshBuilder>();
         }
     }
 
-    public void PlaceMaterial(Vector3 MousePos)
+    public void PlaceMaterial(Vector3 pivotPosition)
     {
-        snapController.UpdateAnchorAndMaterialPos(previewObject.transform, MousePos);
-        RuntimePlacedBuildingMarker.Ensure(previewObject);
-
-        if(previewObject.CompareTag("Walkable"))
-        {
-            partialNavMeshBuilder.UpdateNavMeshAt(previewObject); // Update the affected local NavMesh region.
-        }
-
-
-        RestoreOrigLayer(highlightedObject);
-
+        PlaceMaterial(previewObject, pivotPosition);
     }
 
-
-    public void RemoveMaterial(GameObject newRemoveObject) // Remove the selected building piece and recalculate support.
+    public bool PlaceMaterial(GameObject materialObject, Vector3 pivotPosition)
     {
-        if (newRemoveObject == null) return;
-
-        GameObject removeTarget = newRemoveObject;
-        if (BuildingColliderUtility.TryResolveMaterialRoot(newRemoveObject, out GameObject materialRoot, out _))
+        ResolveDependencies();
+        if (materialObject == null || snapController == null)
         {
-            removeTarget = materialRoot;
+            return false;
         }
 
-        int objLayer = removeTarget.layer;
+        previewObject = materialObject;
+        snapController.UpdateAnchorAndMaterialPos(materialObject.transform, pivotPosition);
+        RuntimePlacedBuildingMarker.Ensure(materialObject);
 
-        if (objLayer != LayerAndTagConstants.Layer_Building &&
-           objLayer != LayerAndTagConstants.Layer_Door )
-           //objLayer != LayerAndTagConstants.Layer_Worktable &&
-           //objLayer != LayerAndTagConstants.Layer_Furnace &&
-           //objLayer != LayerAndTagConstants.Layer_Agungi)
-            return;
+        if (materialObject.CompareTag("Walkable") && partialNavMeshBuilder != null)
+        {
+            partialNavMeshBuilder.UpdateNavMeshAt(materialObject);
+        }
 
+        previewHighlight.Restore();
+        highlightedObject = null;
+        return true;
+    }
 
+    public void RemoveMaterial(GameObject target)
+    {
+        TryRemoveMaterial(target);
+    }
+
+    public bool TryRemoveMaterial(GameObject target)
+    {
+        ResolveDependencies();
+        if (target == null || buildingMaterialManagement == null || structuralIntegritySolver == null)
+        {
+            return false;
+        }
+
+        GameObject removeTarget = ResolveMaterialRoot(target);
+        if (removeTarget == null || !IsRemovableLayer(removeTarget.layer))
+        {
+            return false;
+        }
+
+        if (!TryGetMaterial(removeTarget, out IMaterial material))
+        {
+            return false;
+        }
 
         ResetRemoveCandidate();
-
-        if (removeTarget.TryGetComponent(out IMaterial imat))
-        {
-            structuralIntegritySolver.HandleMaterialPropagate(imat,buildingMaterialManagement);
-            imat.ItemDrop();
-        }
-
-
+        structuralIntegritySolver.HandleMaterialPropagate(material, buildingMaterialManagement);
+        material.ItemDrop();
         buildingMaterialManagement.HideMaterial(removeTarget);
-
-
+        return true;
     }
 
-
-    public void UpdatePreview(GameObject curObject, GameObject target)
+    public void UpdatePreview(GameObject currentObject, GameObject target)
     {
+        previewObject = currentObject;
+        GameObject nextHighlightTarget = target != null ? target : previewObject;
 
-        previewObject = curObject;
-
-        if (highlightedObject != null && (target == null || target != highlightedObject))
-            RestoreOrigLayer(highlightedObject);
-
-        if (target != null)
-            highlightedObject = target;
-        else
-            highlightedObject = previewObject;
-
-    }
-
-    public bool UpdatePreviewColor(bool canPlace, float supportVal)
-    {
-        if (previewObject != null)
+        if (highlightedObject != nextHighlightTarget)
         {
+            previewHighlight.Restore();
+            highlightedObject = nextHighlightTarget;
+        }
+    }
 
-            if (canPlace)
-            {
-                if (supportVal > 0.4f)
-                {
-                    ChangeHighlightLayer(previewObject, layerGreen);
-                }
-                else
-                {
-                    ChangeHighlightLayer(previewObject, layerYellow);
-                }
-
-                return true;
-            }
-            else
-            {
-                ChangeHighlightLayer(previewObject, layerRed);
-                return false;
-            }
+    public bool UpdatePreviewColor(bool canPlace, float supportValue)
+    {
+        if (previewObject == null)
+        {
+            return false;
         }
 
-        return false;
+        ApplyPreviewHighlight(previewObject, canPlace, supportValue);
+        return canPlace;
     }
 
-    public bool UpdatePreviewHighlight(bool canPlace, float supportVal)
+    public bool UpdatePreviewHighlight(bool canPlace, float supportValue)
     {
-        if (previewObject != null)
+        if (previewObject == null || highlightedObject == null)
         {
-
-            if (canPlace)
-            {
-                if (supportVal > 0.4f)
-                {
-                    ChangeHighlightLayer(highlightedObject, layerGreen);
-                }
-                else
-                {
-                    ChangeHighlightLayer(highlightedObject, layerYellow);
-                }
-
-                return true;
-            }
-            else
-            {
-                ChangeHighlightLayer(highlightedObject, layerRed);
-                return false;
-            }
+            return false;
         }
 
-        return false;
-
-
+        ApplyPreviewHighlight(highlightedObject, canPlace, supportValue);
+        return canPlace;
     }
 
+    public void SetHighlightTarget(GameObject targetRoot)
+    {
+        if (targetRoot == null)
+        {
+            ResetHighlitedObject();
+            return;
+        }
+
+        highlightedObject = targetRoot;
+    }
 
     public void ChangeHighlightLayer(GameObject target, int targetLayer)
     {
-        if (target == null) return;
-
-
-
-        if (target.TryGetComponent(out IMaterial imat) && imat.MaterialRenderers != null)
-        {
-
-            foreach (Renderer rend in imat.MaterialRenderers)
-            {
-                if (rend != null)
-                {
-
-                    if (originalLayer == -1)
-                    {
-                        originalLayer = rend.gameObject.layer;
-                    }
-
-                    rend.gameObject.layer = targetLayer;
-                }
-            }
-        }
+        previewHighlight.Apply(target, targetLayer);
     }
 
     public void RestoreOrigLayer(GameObject target)
     {
-        if (target == null || originalLayer == -1) return;
-
-
-
-        if (target.TryGetComponent(out IMaterial imat) && imat.MaterialRenderers != null)
-        {
-            foreach (Renderer rend in imat.MaterialRenderers)
-            {
-                if (rend != null)
-                {
-
-                    rend.gameObject.layer = originalLayer;
-                }
-            }
-        }
-
-        originalLayer = -1;
+        previewHighlight.RestoreIfTarget(target);
+        removalHighlight.RestoreIfTarget(target);
     }
+
     public void RemoveCandidateColorChange(GameObject target, Color color)
     {
-        if (BuildingColliderUtility.TryResolveMaterialRoot(target, out GameObject materialRoot, out _))
+        GameObject materialRoot = ResolveMaterialRoot(target);
+        if (materialRoot == null || !TryGetMaterial(materialRoot, out IMaterial material))
         {
-            target = materialRoot;
+            return;
         }
 
-        IMaterial material;
-
-        if (!target.TryGetComponent(out material))
+        GameObject resolvedTarget = material.GetGameObject();
+        if (resolvedTarget == removeCandidate)
         {
-            material = target.GetComponentInParent<IMaterial>();
+            return;
         }
 
-        if (material == null) return;
-
-        target = material.GetGameObject();
-
-        if (target != removeCandidate)
-        {
-            if (removeCandidate != null)
-            {
-                RestoreOrigLayer(removeCandidate);
-
-            }
-            ChangeHighlightLayer(target, layerBlue);
-            removeCandidate = target;
-        }
+        removalHighlight.Restore();
+        removalHighlight.Apply(resolvedTarget, layerBlue);
+        removeCandidate = resolvedTarget;
     }
 
     public void ResetRemoveCandidate()
     {
-        if (removeCandidate != null)
-        {
-            RestoreOrigLayer(removeCandidate);
-            removeCandidate = null;
-        }
+        removalHighlight.Restore();
+        removeCandidate = null;
     }
+
     public void ChangeColor(GameObject target, Color newColor)
     {
-        if (target == null) return;
-        IMaterial imat = null;
-
-
-        if (target.TryGetComponent(out  imat) && imat.MaterialRenderers != null)
+        if (!TryGetMaterial(target, out IMaterial material) || material.MaterialRenderers == null)
         {
-            if (propertyBlock == null)
-                propertyBlock = new MaterialPropertyBlock();
+            return;
+        }
 
-            foreach (Renderer rend in imat.MaterialRenderers)
+        if (propertyBlock == null)
+        {
+            propertyBlock = new MaterialPropertyBlock();
+        }
+
+        for (int i = 0; i < material.MaterialRenderers.Count; i++)
+        {
+            Renderer renderer = material.MaterialRenderers[i];
+            if (renderer == null)
             {
-                if (rend != null)
-                {
-                    rend.GetPropertyBlock(propertyBlock);
-                    propertyBlock.SetColor("_BaseColor", newColor);
-                    rend.SetPropertyBlock(propertyBlock);
-                }
+                continue;
             }
+
+            renderer.GetPropertyBlock(propertyBlock);
+            propertyBlock.SetColor("_BaseColor", newColor);
+            renderer.SetPropertyBlock(propertyBlock);
         }
     }
 
     public void RestoreOrigColor(GameObject target)
     {
-        if (target == null) return;
-
-        if (target.TryGetComponent(out IMaterial imat) && imat.MaterialRenderers != null)
+        if (!TryGetMaterial(target, out IMaterial material) || material.MaterialRenderers == null)
         {
-            if (propertyBlock == null)
-                propertyBlock = new MaterialPropertyBlock();
+            return;
+        }
 
-            foreach (Renderer rend in imat.MaterialRenderers)
+        if (propertyBlock == null)
+        {
+            propertyBlock = new MaterialPropertyBlock();
+        }
+
+        for (int i = 0; i < material.MaterialRenderers.Count; i++)
+        {
+            Renderer renderer = material.MaterialRenderers[i];
+            if (renderer == null)
             {
-                if (rend != null)
-                {
-                    propertyBlock.Clear();
-                    rend.SetPropertyBlock(propertyBlock);
-                }
+                continue;
             }
+
+            propertyBlock.Clear();
+            renderer.SetPropertyBlock(propertyBlock);
         }
     }
 
     public void ResetRemoveObject()
     {
-        RestoreOrigLayer(removeObject);
+        ResetRemoveCandidate();
     }
-
 
     public void ResetHighlitedObject()
     {
-        RestoreOrigLayer(highlightedObject);
+        previewHighlight.Restore();
+        highlightedObject = null;
+    }
+
+    private void ApplyPreviewHighlight(GameObject target, bool canPlace, float supportValue)
+    {
+        int layer = !canPlace
+            ? layerRed
+            : supportValue > 0.4f ? layerGreen : layerYellow;
+        previewHighlight.Apply(target, layer);
+    }
+
+    private void ResolveDependencies()
+    {
+        if (buildingMaterialManagement == null)
+        {
+            buildingMaterialManagement = GetComponent<BuildingMaterialManagement>();
+        }
+
+        if (structuralIntegritySolver == null)
+        {
+            structuralIntegritySolver = GetComponent<StructuralIntegritySolver>();
+        }
+
+        if (partialNavMeshBuilder == null)
+        {
+            partialNavMeshBuilder = GetComponent<PartialNavMeshBuilder>();
+        }
+
+        if (snapController == null)
+        {
+            snapController = GetComponent<SnapController>();
+        }
+    }
+
+    private static bool IsRemovableLayer(int layer)
+    {
+        return layer == LayerAndTagConstants.Layer_Building ||
+               layer == LayerAndTagConstants.Layer_Door;
+    }
+
+    private static GameObject ResolveMaterialRoot(GameObject target)
+    {
+        if (target == null)
+        {
+            return null;
+        }
+
+        if (BuildingColliderUtility.TryResolveMaterialRoot(
+                target,
+                out GameObject materialRoot,
+                out _))
+        {
+            return materialRoot;
+        }
+
+        return target;
+    }
+
+    private static bool TryGetMaterial(GameObject target, out IMaterial material)
+    {
+        material = null;
+        if (target == null)
+        {
+            return false;
+        }
+
+        if (target.TryGetComponent(out material))
+        {
+            return material != null;
+        }
+
+        material = target.GetComponentInParent<IMaterial>();
+        return material != null;
+    }
+
+    private sealed class LayerHighlightState
+    {
+        private readonly Dictionary<Renderer, int> originalLayers = new Dictionary<Renderer, int>();
+        private GameObject target;
+
+        public void Apply(GameObject nextTarget, int layer)
+        {
+            if (nextTarget == null || !TryGetMaterial(nextTarget, out IMaterial material) ||
+                material.MaterialRenderers == null)
+            {
+                Restore();
+                return;
+            }
+
+            if (target != nextTarget)
+            {
+                Restore();
+                target = nextTarget;
+            }
+
+            for (int i = 0; i < material.MaterialRenderers.Count; i++)
+            {
+                Renderer renderer = material.MaterialRenderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                if (!originalLayers.ContainsKey(renderer))
+                {
+                    originalLayers.Add(renderer, renderer.gameObject.layer);
+                }
+
+                renderer.gameObject.layer = layer;
+            }
+        }
+
+        public void RestoreIfTarget(GameObject candidate)
+        {
+            if (candidate == null || candidate == target)
+            {
+                Restore();
+            }
+        }
+
+        public void Restore()
+        {
+            foreach (KeyValuePair<Renderer, int> pair in originalLayers)
+            {
+                if (pair.Key != null)
+                {
+                    pair.Key.gameObject.layer = pair.Value;
+                }
+            }
+
+            originalLayers.Clear();
+            target = null;
+        }
     }
 }

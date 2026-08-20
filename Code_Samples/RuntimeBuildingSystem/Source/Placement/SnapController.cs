@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-
 public class SnapController : MonoBehaviour
 {
     public struct SnapState
@@ -18,277 +17,354 @@ public class SnapController : MonoBehaviour
         }
     }
 
-
     public enum eCellState { Empty, Occupied, Blocked }
 
+    // Legacy grid fields are retained for scene/prefab serialization compatibility.
     public int gridWidth, gridHeight, gridDepth;
-    public float cellSize = 1.0f; // 각 셀의 크기
-    private eCellState[,,] grid; //그리드 위치정보에 따라서 해당 위치의 상태 표시
+    public float cellSize = 1f;
+    private eCellState[,,] grid;
     private GameObject[,,] installedMaterials;
 
     public float maxDistance = 6.7f;
     public float minDistance = 1.1f;
+    public Vector3Int gridOffset;
+    public float[] yHeight;
+    public float GridHeight;
+
+    [Header("Snap Search")]
+    [SerializeField, Min(0.01f)] private float automaticSnapDistance = 0.4f;
+    [SerializeField, Min(0.01f)] private float automaticSearchRadius = 3.5f;
+    [SerializeField, Min(0.01f)] private float doorSearchRadius = 2f;
+    [SerializeField, Min(0.01f)] private float manualSearchRadius = 0.6f;
+    [SerializeField, Min(8)] private int overlapCapacity = 150;
 
     private GameObject player;
+    private Collider[] hitColliders;
+    private int pivotLayerMask;
+    private Vector3 mousePositionWhenSnapped;
+    private bool hasLoggedCapacityWarning;
 
-    public Vector3Int gridOffset;
-    public GameObject bestWorldSnap = null;
-
-    public float[] yHeight;
-    private int curYGrid;
-
+    public GameObject bestWorldSnap;
+    public bool isSnapped;
     public SnapState snapState = new SnapState(false, Vector3.zero, Vector3.up);
 
-    public float GridHeight; //자재에 맞게 1x1 , 2 x 1이런식으로 리소스 제작할경우 딱 맞게 가능할 듯
-
-    [Header("Cache Vars for Overlap")]
-    private readonly Collider[] hitColliders = new Collider[150];
-    private int pivotLayerMask;
-
-
-    void Start()
+    private void Awake()
     {
-        player = GameObject.FindWithTag("Player"); // "TargetTag"라는 태그를 가진 오브젝트 찾기
         pivotLayerMask = LayerAndTagConstants.Mask_Pivot;
+        EnsureOverlapBuffer();
+        ResolvePlayer();
     }
 
-    public bool CanPlaceMaterial(Vector3 wolrdPos, GameObject obj) //현재 마우스가 가리키는 곳에 자재를 배치할 수 있는지(=empty) 판단하는데 사용
+    private void OnValidate()
     {
+        maxDistance = Mathf.Max(0f, maxDistance);
+        automaticSnapDistance = Mathf.Max(0.01f, automaticSnapDistance);
+        automaticSearchRadius = Mathf.Max(0.01f, automaticSearchRadius);
+        doorSearchRadius = Mathf.Max(0.01f, doorSearchRadius);
+        manualSearchRadius = Mathf.Max(0.01f, manualSearchRadius);
+        overlapCapacity = Mathf.Max(8, overlapCapacity);
+    }
 
-        if (player != null)
+    public void InitializePlayer(Transform playerTransform)
+    {
+        if (playerTransform != null)
         {
-            Vector3 flatMousePos = new Vector3(wolrdPos.x, 0f, wolrdPos.z);
-            Vector3 flatPlayerPos = new Vector3(player.transform.position.x, 0f, player.transform.position.z);
-
-            float sqrDist = (flatMousePos - flatPlayerPos).sqrMagnitude;
-            float sqrMaxDistance = maxDistance * maxDistance;
-
-            if (sqrDist > sqrMaxDistance) // 범위 벗어나면 배치 불가
-                return false;
-
+            player = playerTransform.gameObject;
+        }
+        else
+        {
+            ResolvePlayer();
         }
 
-        return true;
+        EnsureOverlapBuffer();
     }
 
-
-
-    public void UpdateAnchorAndMaterialPos(Transform materialTr, Vector3 newPos)
+    public bool CanPlaceMaterial(Vector3 worldPosition, GameObject materialObject)
     {
-        if (materialTr.gameObject.TryGetComponent(out IMaterial material))
+        if (player == null)
         {
-            GameObject pivot = material.GetPivot();
-
-            if (pivot != null)
-            {
-                Vector3 offset = material.GetOffsetBetweenObjAndAnchor();
-                pivot.transform.position = newPos;
-                materialTr.position = newPos + offset;
-
-            }
+            ResolvePlayer();
         }
 
+        if (player == null)
+        {
+            return true;
+        }
+
+        Vector3 flatPosition = new Vector3(worldPosition.x, 0f, worldPosition.z);
+        Vector3 flatPlayerPosition = new Vector3(
+            player.transform.position.x,
+            0f,
+            player.transform.position.z);
+
+        return (flatPosition - flatPlayerPosition).sqrMagnitude <= maxDistance * maxDistance;
     }
 
-    public GameObject GetPivot(Transform parentTr)
+    public void UpdateAnchorAndMaterialPos(Transform materialTransform, Vector3 newPosition)
     {
-        Transform tr = parentTr.Find("Pivot");
-        return tr.gameObject;
+        if (materialTransform == null ||
+            !materialTransform.gameObject.TryGetComponent(out IMaterial material))
+        {
+            return;
+        }
+
+        GameObject pivot = material.GetPivot();
+        if (pivot == null)
+        {
+            materialTransform.position = newPosition;
+            return;
+        }
+
+        Vector3 offset = material.GetOffsetBetweenObjAndAnchor();
+        pivot.transform.position = newPosition;
+        materialTransform.position = newPosition + offset;
     }
 
-    public bool isSnapped = false;
-    private Vector3 MousePosWhenSnapped = Vector3.zero; // 스냅된 위치 저장
-    private float limitDistance = 0.5f; // 스냅 포인트와의 거리 제한
-
-    public Vector3 AdjustMaterialWithClosestSnapPoint(Transform materialTr, Vector3 newPos, RaycastHit hitData, ref GameObject curSnapPoint, ref GameObject curPivotPoint, bool bIsFree = false, bool bIsSnaptime = false)
+    public GameObject GetPivot(Transform parentTransform)
     {
-        IMaterial material = materialTr.gameObject.GetComponent<IMaterial>();
-        List<GameObject> curMatSnapPoints = material.GetAnchors();
-        bool isDoor = materialTr.gameObject.CompareTag(LayerAndTagConstants.Tag_Door);
+        if (parentTransform == null)
+        {
+            return null;
+        }
 
+        Transform pivot = parentTransform.Find("Pivot");
+        return pivot != null ? pivot.gameObject : null;
+    }
+
+    public Vector3 AdjustMaterialWithClosestSnapPoint(
+        Transform materialTransform,
+        Vector3 newPosition,
+        RaycastHit hitData,
+        ref GameObject currentSnapPoint,
+        ref GameObject currentPivotPoint,
+        bool bIsFree = false,
+        bool bIsSnaptime = false)
+    {
+        if (materialTransform == null ||
+            !materialTransform.gameObject.TryGetComponent(out IMaterial material))
+        {
+            ClearSnapState();
+            return newPosition;
+        }
+
+        List<GameObject> localAnchors = material.GetAnchors();
+        if (localAnchors == null || localAnchors.Count == 0)
+        {
+            ClearSnapState();
+            currentSnapPoint = null;
+            currentPivotPoint = null;
+            return newPosition;
+        }
+
+        bool isDoor = materialTransform.gameObject.CompareTag(LayerAndTagConstants.Tag_Door);
         GameObject heldSnap = null;
-        Vector3 targetPos = newPos;
+        Vector3 targetPosition = newPosition;
         bool snapped = false;
 
-        // 1. 스냅 모드일 경우: 가장 가까운 월드 스냅 포인트 찾기
         if (!bIsFree && !isSnapped && bIsSnaptime)
         {
-            (heldSnap, targetPos, snapped) = FindBestWorldSnapAnchor(materialTr, curMatSnapPoints, newPos, isDoor);
-            if (snapped) MousePosWhenSnapped = newPos;
+            bestWorldSnap = null;
+            (heldSnap, targetPosition, snapped) = FindBestWorldSnapAnchor(
+                materialTransform,
+                localAnchors,
+                newPosition,
+                isDoor);
+
+            if (snapped)
+            {
+                mousePositionWhenSnapped = newPosition;
+            }
         }
 
-        // 같은 오브젝트에 레이캐스트가 맞았을 경우 스냅 해제
-        CheckAndReleaseSelfSnap(materialTr, hitData, newPos, targetPos, ref heldSnap, ref snapped, material);
+        CheckAndReleaseSelfSnap(
+            materialTransform,
+            hitData,
+            newPosition,
+            targetPosition,
+            ref heldSnap,
+            ref snapped,
+            material);
 
-        // 표면의 노멀(Normal) 벡터와 일치하는 최적의 피벗 찾기
-        GameObject heldPivot = FindBestPivot(materialTr, material, curMatSnapPoints, hitData.normal);
+        GameObject heldPivot = FindBestPivot(
+            materialTransform,
+            material,
+            localAnchors,
+            hitData.normal);
 
-        // 기존 스냅 상태 유지 혹은 마우스 거리에 따른 해제
-        MaintainOrReleaseSnap(newPos, curSnapPoint, ref heldSnap, ref targetPos, ref snapped);
+        MaintainOrReleaseSnap(
+            newPosition,
+            currentSnapPoint,
+            ref heldSnap,
+            ref targetPosition,
+            ref snapped);
 
-        // 최종 상태
         isSnapped = snapped;
-        snapState.isSnapped = isSnapped;
-        curSnapPoint = heldSnap;
-        curPivotPoint = heldPivot ?? curSnapPoint; // 피벗이 없으면 스냅포인트를 피벗으로 사용
+        currentSnapPoint = heldSnap;
+        currentPivotPoint = heldPivot ?? currentSnapPoint;
+        UpdateSnapState(heldSnap);
 
+        Transform offsetAnchor = heldSnap != null
+            ? heldSnap.transform
+            : currentPivotPoint != null ? currentPivotPoint.transform : null;
 
+        return offsetAnchor != null
+            ? AdjustPositionByLocalOffset(materialTransform, offsetAnchor, targetPosition)
+            : newPosition;
+    }
 
-        // 위치 보정 후 반환 (heldSnap이 없으면 피벗 기준으로, 있으면 스냅포인트 기준으로 계산)
-        if (heldSnap == null)
+    public Vector3 AdjustMaterialWithCurSnapPoint(
+        Transform currentSnapPoint,
+        GameObject materialObject,
+        Vector3 newPosition,
+        RaycastHit hitData,
+        bool bIsFree = false)
+    {
+        if (currentSnapPoint == null || materialObject == null ||
+            !materialObject.TryGetComponent(out IMaterial material))
         {
-
-            return posAdjustByLocalOffset(materialTr, curPivotPoint.transform, newPos, material);
+            ClearSnapState();
+            return newPosition;
         }
 
-
-        return posAdjustByLocalOffset(materialTr, heldSnap.transform, targetPos, material);
-    }
-    public Vector3 AdjustMaterialWithCurSnapPoint(Transform curSnapPoint, GameObject materialObj, Vector3 newPos, RaycastHit hitData, bool bIsFree = false)
-    {
-        if (curSnapPoint == null || !materialObj.TryGetComponent(out IMaterial material))
-            return newPos;// 자재가 아니면 마우스 위치 그대로 반환
-
-        // 초기 타겟 위치는 마우스 위치
-        Vector3 targetSnapPos = newPos;
-
-        // 자유 모드가 아닐 경우, 주변에 맞물릴 수 있는 월드 스냅 포인트 탐색
+        Vector3 targetSnapPosition = newPosition;
         if (!bIsFree)
         {
-            // 이전 프레임의 타겟을 지우고 탐색 시작
             bestWorldSnap = null;
-
-            targetSnapPos = FindTargetWorldSnapPosForManualMode(curSnapPoint, newPos);
-
-            // 스냅 됐을 경우 체크
-            if (bestWorldSnap != null)
-            {
-                isSnapped = true;
-                snapState.isSnapped = true;
-            }
-            else
-            {
-                isSnapped = false;
-                snapState.isSnapped = false;
-            }
+            targetSnapPosition = FindTargetWorldSnapPositionForManualMode(
+                currentSnapPoint,
+                newPosition,
+                materialObject.transform);
+            isSnapped = bestWorldSnap != null;
         }
-        else // 자유 모드(bIsFree)일 때는 강제로 스냅 해제
+        else
         {
-            isSnapped = false;
-            snapState.isSnapped = false;
-            bestWorldSnap = null;
+            ClearSnapState();
         }
 
-        return posAdjustByLocalOffset(materialObj.transform, curSnapPoint, targetSnapPos , material);
+        UpdateSnapState(bestWorldSnap);
+        return AdjustPositionByLocalOffset(
+            materialObject.transform,
+            currentSnapPoint,
+            targetSnapPosition);
     }
 
-    private Vector3 posAdjustByLocalOffset(Transform curMaterialTr, Transform curSnapPointTr, Vector3 pivotPos, IMaterial mat)
+    public Vector3 AdjustSnapOffset(Transform materialTransform, Vector3 newPosition, RaycastHit hitData)
     {
-
-        Quaternion newRot = curMaterialTr.rotation;
-
-        // pivot → curSnapPoint 로컬 오프셋
-        Vector3 localOffset = curMaterialTr.InverseTransformPoint(curSnapPointTr.position);
-
-        // 월드 오프셋 (현재 회전을 그대로 사용)
-        Vector3 worldOffset = newRot * localOffset;
-
-        // 최종 위치 = targetSnap에서 오프셋만큼 빼기
-        Vector3 finalPos = pivotPos - worldOffset;
-
-
-        return finalPos;
-    }
-
-
-
-    public Vector3 AdjustSnapOffset(Transform materialTr, Vector3 newPos, RaycastHit hitData) //앵커 오프셋을 통해서 업데이트 시켜준다.
-    {
-        IMaterial material = materialTr.gameObject.GetComponent<IMaterial>();
-        List<GameObject> curMatSnapPoints = material.GetAnchors();
-        float score = -99999f;
-
-        GameObject heldSnap = null;
-
-        foreach (var curMat in curMatSnapPoints)
+        if (materialTransform == null ||
+            !materialTransform.gameObject.TryGetComponent(out IMaterial material))
         {
+            return newPosition;
+        }
 
-            float newDist = 1f;// Vector3.Distance(curMat.transform.position, newPos);
-            float dot = Vector3.Dot(curMat.transform.forward, hitData.normal);
+        List<GameObject> anchors = material.GetAnchors();
+        if (anchors == null)
+        {
+            return newPosition;
+        }
+
+        float bestScore = float.NegativeInfinity;
+        GameObject bestAnchor = null;
+
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            GameObject anchor = anchors[i];
+            if (anchor == null)
+            {
+                continue;
+            }
+
+            float dot = Vector3.Dot(anchor.transform.forward, hitData.normal);
             float reversedAccordance = (1f - dot) * 0.5f;
-
-            float newScore = (1 - newDist) + (reversedAccordance * 0.5f);
-
-            if (score < newScore)
+            float score = reversedAccordance * 0.5f;
+            if (score > bestScore)
             {
-                heldSnap = curMat;
-                score = newScore;
+                bestAnchor = anchor;
+                bestScore = score;
             }
-
         }
 
-        if (heldSnap == null)
-        {
-            // UnityEngine.Debug.Log("heldSnap이 null입니다. 스냅 포인트를 찾지 못했습니다.");
-            return newPos; // heldSnap이 없으면 그냥 새 위치 반환
-        }
-
-        Vector3 localOffset = heldSnap.transform.localPosition;
-
-        return newPos - materialTr.TransformDirection(localOffset);
+        return bestAnchor != null
+            ? newPosition - materialTransform.TransformDirection(bestAnchor.transform.localPosition)
+            : newPosition;
     }
 
-
-    // 현 자재 앵커와 겹치는 가장 가까운 월드 앵커 찾기
-    private (GameObject bestLocalSnap, Vector3 targetPos, bool snapped) FindBestWorldSnapAnchor(Transform materialTr, List<GameObject> curMatSnapPoints, Vector3 newPos, bool isDoor)
+    public void ClearSnapState()
     {
+        isSnapped = false;
+        bestWorldSnap = null;
+        snapState = new SnapState(false, Vector3.zero, Vector3.up);
+    }
+
+    private (GameObject bestLocalSnap, Vector3 targetPosition, bool snapped)
+        FindBestWorldSnapAnchor(
+            Transform materialTransform,
+            List<GameObject> localAnchors,
+            Vector3 newPosition,
+            bool isDoor)
+    {
+        EnsureOverlapBuffer();
+
         GameObject bestLocalSnap = null;
-
-        Vector3 targetPos = newPos;
+        Vector3 targetPosition = newPosition;
         bool snapped = false;
+        float minimumSquaredDistance = float.MaxValue;
+        float snapDistanceSquared = automaticSnapDistance * automaticSnapDistance;
+        float searchRadius = isDoor ? doorSearchRadius : automaticSearchRadius;
 
-        float minDistance = float.MaxValue;
-        float UNSNAP_DIST = 0.4f;
-        float sqrUnsnapDist = UNSNAP_DIST * UNSNAP_DIST;
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            materialTransform.position,
+            searchRadius,
+            hitColliders,
+            pivotLayerMask);
+        WarnIfBufferIsFull(hitCount);
 
-        float searchRadius = isDoor ? 2.0f : 3.5f;
-        int hitCount = Physics.OverlapSphereNonAlloc(materialTr.position, searchRadius, hitColliders, pivotLayerMask);
-
-
-        for (int i = 0; i < hitCount; i++)
+        for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
         {
-            Collider col = hitColliders[i];
-            GameObject worldAnchor = col.gameObject;
+            Collider collider = hitColliders[hitIndex];
+            if (collider == null)
+            {
+                continue;
+            }
 
-            if (worldAnchor == null || worldAnchor == materialTr.gameObject || worldAnchor.CompareTag(LayerAndTagConstants.Tag_Snap)) continue;
+            GameObject worldAnchor = collider.gameObject;
+            if (worldAnchor == null ||
+                worldAnchor.transform.IsChildOf(materialTransform) ||
+                worldAnchor.CompareTag(LayerAndTagConstants.Tag_Snap))
+            {
+                continue;
+            }
+
             if (isDoor)
             {
-                if(!worldAnchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot)) continue;
-                else
+                if (!worldAnchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot))
                 {
-                   var root = worldAnchor.transform.root.gameObject;
-                    if(root.TryGetComponent<Door>(out _)) continue;
+                    continue;
                 }
 
+                GameObject root = worldAnchor.transform.root.gameObject;
+                if (root.TryGetComponent<Door>(out _))
+                {
+                    continue;
+                }
             }
 
-            // 내 자재의 모든 앵커를 순회하며 가장 가까운 짝을 찾음
-            foreach (var localAnchor in curMatSnapPoints)
+            for (int localIndex = 0; localIndex < localAnchors.Count; localIndex++)
             {
-                // 로컬 앵커 기본 예외 처리
-                if (localAnchor == null) continue;
-
-                if (localAnchor.CompareTag(LayerAndTagConstants.Tag_Snap)) continue;
-                if (isDoor && !localAnchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot)) continue;
-
-                // sqrMagnitude를 이용한 빠른 거리 계산 (루트 연산 방지)
-                float sqrDist = (worldAnchor.transform.position - localAnchor.transform.position).sqrMagnitude;
-
-                // 스냅 허용 거리 이내이면서, 지금까지 찾은 거리보다 더 가깝다면 갱신
-                if (sqrDist <= sqrUnsnapDist && sqrDist < minDistance)
+                GameObject localAnchor = localAnchors[localIndex];
+                if (localAnchor == null ||
+                    localAnchor.CompareTag(LayerAndTagConstants.Tag_Snap) ||
+                    (isDoor && !localAnchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot)))
                 {
-                    minDistance = sqrDist;
-                    targetPos = worldAnchor.transform.position;
+                    continue;
+                }
+
+                float squaredDistance =
+                    (worldAnchor.transform.position - localAnchor.transform.position).sqrMagnitude;
+                if (squaredDistance <= snapDistanceSquared &&
+                    squaredDistance < minimumSquaredDistance)
+                {
+                    minimumSquaredDistance = squaredDistance;
+                    targetPosition = worldAnchor.transform.position;
                     bestLocalSnap = localAnchor;
                     bestWorldSnap = worldAnchor;
                     snapped = true;
@@ -296,142 +372,225 @@ public class SnapController : MonoBehaviour
             }
         }
 
-        return (bestLocalSnap, targetPos, snapped);
+        return (bestLocalSnap, targetPosition, snapped);
     }
 
-    // 자신과 똑같은 오브젝트를 가리켰을 때 스냅이 꼬이는 현상 방지
-    private void CheckAndReleaseSelfSnap(Transform materialTr, RaycastHit hitData, Vector3 newPos, Vector3 targetPos, ref GameObject heldSnap, ref bool snapped, IMaterial mat)
+    private void CheckAndReleaseSelfSnap(
+        Transform materialTransform,
+        RaycastHit hitData,
+        Vector3 newPosition,
+        Vector3 targetPosition,
+        ref GameObject heldSnap,
+        ref bool snapped,
+        IMaterial material)
     {
-        GameObject hitObject = hitData.collider?.gameObject;
-
-        if (hitObject == null)
+        GameObject hitObject = hitData.collider != null ? hitData.collider.gameObject : null;
+        if (hitObject == null || !snapped || heldSnap == null)
+        {
             return;
+        }
 
         bool isPreviewSelf =
-            hitObject == materialTr.gameObject ||
-            hitObject.transform.IsChildOf(materialTr);
-
-        // 다른 동일 프리팹 인스턴스는 자기 자신이 아님
+            hitObject == materialTransform.gameObject ||
+            hitObject.transform.IsChildOf(materialTransform);
         if (!isPreviewSelf)
+        {
             return;
+        }
 
-        if (!snapped || heldSnap == null)
-            return;
-
-        Vector3 previousPosition =
-            posAdjustByLocalOffset(
-                materialTr,
-                heldSnap.transform,
-                targetPos,
-                mat);
+        Vector3 adjustedPosition = AdjustPositionByLocalOffset(
+            materialTransform,
+            heldSnap.transform,
+            targetPosition);
 
         const float releaseDistance = 0.1f;
-
-        if ((previousPosition - hitObject.transform.position).sqrMagnitude <
+        if ((adjustedPosition - hitObject.transform.position).sqrMagnitude <
             releaseDistance * releaseDistance)
         {
             heldSnap = null;
             snapped = false;
-            MousePosWhenSnapped = newPos;
+            bestWorldSnap = null;
+            mousePositionWhenSnapped = newPosition;
         }
-
     }
 
-    // 벽면이나 바닥의 Normal 각도에 맞춰서 가장 적합한 회전축(Pivot) 찾기
-    private GameObject FindBestPivot(Transform materialTr, IMaterial material, List<GameObject> curMatSnapPoints, Vector3 hitNormal)
+    private GameObject FindBestPivot(
+        Transform materialTransform,
+        IMaterial material,
+        List<GameObject> localAnchors,
+        Vector3 hitNormal)
     {
-        float direcAccordance = 3.0f;
-        GameObject heldPivot = null;
+        float bestDirection = 3f;
+        GameObject bestPivot = null;
 
-        foreach (var curMatSnapPoint in curMatSnapPoints)
+        for (int i = 0; i < localAnchors.Count; i++)
         {
-            float newdirec = Vector3.Dot(curMatSnapPoint.transform.forward, hitNormal);
-
-            if (newdirec < direcAccordance)
+            GameObject anchor = localAnchors[i];
+            if (anchor == null)
             {
-                direcAccordance = newdirec;
-                heldPivot = curMatSnapPoint;
+                continue;
+            }
+
+            float direction = Vector3.Dot(anchor.transform.forward, hitNormal);
+            if (direction < bestDirection)
+            {
+                bestDirection = direction;
+                bestPivot = anchor;
 
                 if (material.GetBuildingMaterialType() == eBuildingMaterial.Torch)
                 {
-                    material.ApplySpecialRotation(materialTr, curMatSnapPoint);
+                    material.ApplySpecialRotation(materialTransform, anchor);
                 }
             }
-            else if (newdirec == direcAccordance && curMatSnapPoint.CompareTag(LayerAndTagConstants.Tag_Snap))
+            else if (Mathf.Approximately(direction, bestDirection) &&
+                     anchor.CompareTag(LayerAndTagConstants.Tag_Snap))
             {
-                heldPivot = curMatSnapPoint;
+                bestPivot = anchor;
             }
         }
-        return heldPivot;
+
+        return bestPivot;
     }
 
-    // 마우스를 너무 멀리 옮기면 스냅 풀어주기
-    private void MaintainOrReleaseSnap(Vector3 newPos, GameObject curSnapPoint, ref GameObject heldSnap, ref Vector3 targetPos, ref bool snapped)
+    private void MaintainOrReleaseSnap(
+        Vector3 newPosition,
+        GameObject currentSnapPoint,
+        ref GameObject heldSnap,
+        ref Vector3 targetPosition,
+        ref bool snapped)
     {
-        if (isSnapped)
+        if (!isSnapped)
         {
-            float sqrDist = (MousePosWhenSnapped - newPos).sqrMagnitude;
-            float sqrUnsnapDist = 0.4f * 0.4f; // UNSNAP_DIST
+            return;
+        }
 
-            if (sqrDist > sqrUnsnapDist + 0.05f)
-            {
-                heldSnap = null;
-                limitDistance = 0.5f;
-                snapped = false;
-                MousePosWhenSnapped = newPos;
-            }
-            else if (curSnapPoint != null)
-            {
-                targetPos = curSnapPoint.transform.position;
-                heldSnap = curSnapPoint;
-                snapped = true;
-            }
+        float squaredDistance = (mousePositionWhenSnapped - newPosition).sqrMagnitude;
+        float releaseDistanceSquared = automaticSnapDistance * automaticSnapDistance;
+        if (squaredDistance > releaseDistanceSquared + 0.05f)
+        {
+            heldSnap = null;
+            snapped = false;
+            bestWorldSnap = null;
+            mousePositionWhenSnapped = newPosition;
+            return;
+        }
+
+        if (currentSnapPoint != null)
+        {
+            targetPosition = currentSnapPoint.transform.position;
+            heldSnap = currentSnapPoint;
+            snapped = true;
         }
     }
 
-    private Vector3 FindTargetWorldSnapPosForManualMode(Transform curSnapPoint, Vector3 newPos)
+    private Vector3 FindTargetWorldSnapPositionForManualMode(
+        Transform currentSnapPoint,
+        Vector3 newPosition,
+        Transform previewRoot)
     {
-        Vector3 bestPos = newPos;
+        EnsureOverlapBuffer();
 
-        float detectRadius = 0.6f;
-        float UNSNAP_DIST = 0.4f;
-        float sqrUnsnapDist = UNSNAP_DIST * UNSNAP_DIST;
+        Vector3 bestPosition = newPosition;
+        float snapDistanceSquared = automaticSnapDistance * automaticSnapDistance;
+        float bestDirectionMatch = 2f;
 
-        float bestDirectionMatch = 2f; // 방향 일치도 (최솟값을 찾기 위해 큰 값으로 초기화)
-
-        // 마우스 위치 주변의 피벗들 검색
-        int hitCount = Physics.OverlapSphereNonAlloc(newPos, detectRadius, hitColliders, pivotLayerMask);
+        int hitCount = Physics.OverlapSphereNonAlloc(
+            newPosition,
+            manualSearchRadius,
+            hitColliders,
+            pivotLayerMask);
+        WarnIfBufferIsFull(hitCount);
 
         for (int i = 0; i < hitCount; i++)
         {
-            Collider col = hitColliders[i];
-            if (col == null || col.gameObject == curSnapPoint.gameObject) continue; // 자기 자신 무시
+            Collider collider = hitColliders[i];
+            if (collider == null ||
+                collider.gameObject == currentSnapPoint.gameObject ||
+                (previewRoot != null && collider.transform.IsChildOf(previewRoot)))
+            {
+                continue;
+            }
 
-            // 거리 검사 (너무 멀면 스냅 무시)
-            float sqrDist = (newPos - col.transform.position).sqrMagnitude;
-            if (sqrDist > sqrUnsnapDist) continue;
+            float squaredDistance = (newPosition - collider.transform.position).sqrMagnitude;
+            if (squaredDistance > snapDistanceSquared)
+            {
+                continue;
+            }
 
-            // 방향 검사: 내 스냅 포인트의 앞면(forward)과 타겟의 앞면 각도 비교
-            float directionMatch = Vector3.Dot(curSnapPoint.forward, col.transform.forward);
-
-            // 더 방향이 잘 맞는(값이 작은) 피벗이 있다면 타겟 갱신
-            if (bestDirectionMatch > directionMatch)
+            float directionMatch = Vector3.Dot(
+                currentSnapPoint.forward,
+                collider.transform.forward);
+            if (directionMatch < bestDirectionMatch)
             {
                 bestDirectionMatch = directionMatch;
-                bestWorldSnap = col.gameObject;
-                bestPos = col.transform.position;
+                bestWorldSnap = collider.gameObject;
+                bestPosition = collider.transform.position;
             }
         }
 
-        return bestPos; // 마땅한 게 없으면 원래 마우스 위치(newPos) 그대로 반환
+        return bestPosition;
     }
 
-    public void ClearSnapState()
+    private Vector3 AdjustPositionByLocalOffset(
+        Transform materialTransform,
+        Transform snapPointTransform,
+        Vector3 targetPivotPosition)
     {
-        isSnapped = false;
-        bestWorldSnap = null;
-        snapState.isSnapped = false;
+        if (materialTransform == null || snapPointTransform == null)
+        {
+            return targetPivotPosition;
+        }
+
+        Vector3 localOffset = materialTransform.InverseTransformPoint(snapPointTransform.position);
+        Vector3 worldOffset = materialTransform.rotation * localOffset;
+        return targetPivotPosition - worldOffset;
     }
 
+    private void UpdateSnapState(GameObject targetAnchor)
+    {
+        isSnapped = targetAnchor != null && bestWorldSnap != null;
+        snapState = isSnapped
+            ? new SnapState(
+                true,
+                bestWorldSnap.transform.position,
+                bestWorldSnap.transform.forward)
+            : new SnapState(false, Vector3.zero, Vector3.up);
+    }
 
+    private void ResolvePlayer()
+    {
+        if (player != null)
+        {
+            return;
+        }
+
+        GameObject found = GameObject.FindWithTag("Player");
+        if (found != null)
+        {
+            player = found;
+        }
+    }
+
+    private void EnsureOverlapBuffer()
+    {
+        int capacity = Mathf.Max(8, overlapCapacity);
+        if (hitColliders == null || hitColliders.Length != capacity)
+        {
+            hitColliders = new Collider[capacity];
+            hasLoggedCapacityWarning = false;
+        }
+    }
+
+    private void WarnIfBufferIsFull(int hitCount)
+    {
+        if (!hasLoggedCapacityWarning &&
+            hitColliders != null &&
+            hitCount >= hitColliders.Length)
+        {
+            Debug.LogWarning(
+                $"[SnapController] Physics query filled its {hitColliders.Length}-collider buffer. " +
+                "Increase Overlap Capacity to avoid truncated snap candidates.");
+            hasLoggedCapacityWarning = true;
+        }
+    }
 }
