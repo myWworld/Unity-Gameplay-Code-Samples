@@ -15,7 +15,7 @@
 - `StructuralIntegritySolver`는 설치 시 부모-자식 연결을 갱신하고, 여러 지지 경로 중 더 높은 값을 남기는 Queue 기반 지지력 전파를 수행합니다. 철거 시에는 영향받는 연결 컴포넌트만 수집해 지지력을 다시 계산하고 붕괴 대상을 처리합니다.
 - `PlayerInventoryAdapter`는 건축 로직에서 인벤토리 구현 세부사항을 분리하고, 요구 자원 조회·검증·소모를 공통 인터페이스로 제공합니다.
 - 프리뷰 Root는 판정 위치로 즉시 이동하고 Visual 자식만 보간해 판정 정확도와 화면의 부드러움을 분리합니다.
-- 새로 분리된 `BuildingPreviewController`, `BuildingPlacementService`, `BuildingRemovalService`는 `BuildingSystem`이 생성하는 일반 C# 런타임 객체이므로 씬에 별도 MonoBehaviour 컴포넌트를 추가할 필요가 없습니다.
+- 새로 분리된 `BuildingPreviewController`, `BuildingPlacementService`, `BuildingRemovalService`는 `BuildingSystem`이 생성하는 일반 C# 런타임 객체이므로 씬에 별도 MonoBehaviour 컴포넌트를 추가할 필요하지 않았습니다
 
 ## 처리 흐름
 
