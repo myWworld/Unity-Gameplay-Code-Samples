@@ -23,7 +23,7 @@
 ├─ README.md
 ├─ LICENSE
 ├─ NOTICE.md
-├─ Samples/
+├─ Code_Samples/
 │  ├─ RuntimeBuildingSystem/
 │  │  ├─ README.md
 │  │  └─ Source/
