@@ -19,6 +19,7 @@ public class TreeStrikeYC : BossSkill
     private Coroutine treeStrikeCoroutine = null;
 
     private Collider[] hitColliders = new Collider[10];
+
     public override void Init(BossAnimEventBridge brain)
     {
         base.Init(brain);

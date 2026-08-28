@@ -22,6 +22,6 @@ public class NormalTentacleChild : TenTacleChild
     }
     public override void ReturnToPool()
     {
-        tentacleManager.BackToNormalTentaclePool(this.gameObject, 2f);
+        tentacleManager.BackToNormalTentaclePool(this.gameObject, 2f);//풀로 반환 일반 촉수 관리용
     }
 }

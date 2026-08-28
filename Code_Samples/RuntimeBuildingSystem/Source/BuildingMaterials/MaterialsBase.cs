@@ -231,9 +231,7 @@ public abstract class MaterialsBase : MonoBehaviour, IMaterial
 
             if (material is Torch torch && !torch.HasSupported(GetGameObject()))
             {
-                // Preserve the original torch cleanup path. Torch may have project-specific
-                // pooling/destruction behavior outside this public source snapshot.
-                Destroy(materialRoot);
+                buildingMaterialManagement.DestroyProcess(materialRoot);
             }
         }
 

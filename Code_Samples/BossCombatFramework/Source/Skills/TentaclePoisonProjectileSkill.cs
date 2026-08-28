@@ -45,10 +45,10 @@ public class TentaclePoisonProjectileSkill : TentacleSkillBase
 
             if (obj != null && obj.TryGetComponent<TenTacleChild>(out var child))
             {
-                if (child.IsBusy) continue;
+                if (child.IsBusy) continue;//다른 공격중이면 건너뜀
 
                 validTentacles.Add(child);
-                child.PoisonTelegraph(telegraphScale);
+                child.PoisonTelegraph(telegraphScale);//신호 이펙트 발생
             }
         }
 
@@ -58,7 +58,7 @@ public class TentaclePoisonProjectileSkill : TentacleSkillBase
 
         foreach (var tentacle in validTentacles)
         {
-            tentacle.PoisonProjectile(targetTr);
+            tentacle.PoisonProjectile(targetTr);//실제 발사 처리
         }
     }
 

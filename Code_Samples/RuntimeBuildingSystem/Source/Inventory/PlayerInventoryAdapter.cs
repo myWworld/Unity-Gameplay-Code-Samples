@@ -398,9 +398,8 @@ public class PlayerInventoryAdapter : MonoBehaviour, IInventoryAdapter
     private PlayerInventoryStore ResolveGlobalUnifiedInventoryControllerStore()
     {
         Project.UI.Inventory.PlayerUnifiedInventoryController[] controllers =
-            FindObjectsByType<Project.UI.Inventory.PlayerUnifiedInventoryController>(
-                FindObjectsInactive.Include,
-                FindObjectsSortMode.InstanceID);
+            FindObjectsByType<Project.UI.Inventory.PlayerUnifiedInventoryController>(FindObjectsInactive.Include,  FindObjectsSortMode.InstanceID);
+
         for (int i = 0; i < controllers.Length; i++)
         {
             Project.UI.Inventory.PlayerUnifiedInventoryController controller = controllers[i];

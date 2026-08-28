@@ -37,7 +37,7 @@ public class BuildingInputHandler : MonoBehaviour
         ResolveDependencies();
     }
 
-    public void UpdateInputData()
+    public void UpdateInputData()//지정한 레이어에 닿은 레이캐스트 정보 가져오기
     {
         MousePos = GetMousePos();
 

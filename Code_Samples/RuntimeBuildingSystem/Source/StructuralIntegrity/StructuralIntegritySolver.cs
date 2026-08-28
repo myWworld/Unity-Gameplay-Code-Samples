@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Profiling;
 
-public class StructuralIntegritySolver : MonoBehaviour
+public class StructuralIntegritySolver : MonoBehaviour //지지력 관련 계산을 하는 클래스
 {
     [Header("Dependencies")]
     public BuildingMaterialManagement buildingMaterialManagement;
@@ -86,10 +86,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         EnsureQueryBuffer();
     }
 
-    public float PredictSupportValue(
-        Vector3 previewPosition,
-        GameObject previewObject,
-        BuildingMaterialManagement manager)
+    public float PredictSupportValue(Vector3 previewPosition, GameObject previewObject, BuildingMaterialManagement manager)//전체 탐색 안하고 배치할 자재 근처 지지력 통해 예측
     {
         if (previewObject == null)
         {
@@ -102,19 +99,19 @@ public class StructuralIntegritySolver : MonoBehaviour
             return 0f;
         }
 
-        if (manager.IsTouchingGroundAt(previewPosition, previewObject))
+        if (manager.IsTouchingGroundAt(previewPosition, previewObject))//땅에 설치할 경우 바로 기반지지력
         {
             return baseSupportValue;
         }
 
-        List<GameObject> anchors = previewMaterial.GetAnchors();
+        List<GameObject> anchors = previewMaterial.GetAnchors();//현재 홀딩 자재 앵커들 가져옴
         if (anchors == null || anchors.Count == 0)
         {
             return 0f;
         }
 
         EnsureQueryBuffer();
-        Vector3 positionOffset = previewPosition - previewObject.transform.position;
+        Vector3 positionOffset = previewPosition - previewObject.transform.position;//프리뷰 오브젝트가 현재 위치에서 실제 배치 예정 위치까지 얼마나 이동해야 하는지
         float maximumPredictedSupport = 0f;
 
         for (int anchorIndex = 0; anchorIndex < anchors.Count; anchorIndex++)
@@ -125,12 +122,14 @@ public class StructuralIntegritySolver : MonoBehaviour
                 continue;
             }
 
-            Vector3 futureAnchorPosition = anchor.transform.position + positionOffset;
+            Vector3 futureAnchorPosition = anchor.transform.position + positionOffset;//오프셋을 더해 앵커의 미래 위치계산
+
             int hitCount = Physics.OverlapSphereNonAlloc(
                 futureAnchorPosition,
                 connectionRadius,
                 hitColliders,
-                buildingLayerMask);
+                buildingLayerMask);//앵커의 미래 위치에서 근처 자재 가져옴
+
             WarnIfQueryBufferIsFull(hitCount);
 
             for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
@@ -141,18 +140,15 @@ public class StructuralIntegritySolver : MonoBehaviour
                     continue;
                 }
 
-                if (!BuildingColliderUtility.TryResolveMaterialRoot(
-                        collider,
-                        out _,
-                        out IMaterial neighborMaterial) ||
-                    neighborMaterial == null)
+                if (!BuildingColliderUtility.TryResolveMaterialRoot(collider, out _, out IMaterial neighborMaterial)
+                    || neighborMaterial == null)
                 {
                     continue;
                 }
 
-                float predictedSupport =
-                    neighborMaterial.SupportValue * GetDecayValueByMaterialType(neighborMaterial);
-                if (predictedSupport > maximumPredictedSupport)
+                float predictedSupport = neighborMaterial.SupportValue * GetDecayValueByMaterialType(neighborMaterial);
+
+                if (predictedSupport > maximumPredictedSupport)//최대지지력을 얻을 수 있는 쪽으로 작동
                 {
                     maximumPredictedSupport = predictedSupport;
                 }
@@ -162,7 +158,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         return maximumPredictedSupport;
     }
 
-    public void HandleMaterialPlacement(IMaterial placedMaterial)
+    public void HandleMaterialPlacement(IMaterial placedMaterial)//배치시 지지력 전파
     {
         if (!IsValidMaterial(placedMaterial))
         {
@@ -170,7 +166,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
 
         bfsQueue.Clear();
-        bfsQueue.Enqueue(placedMaterial);
+        bfsQueue.Enqueue(placedMaterial);//배치된 자재에서 시작
         PropagateMaximumSupport(bfsQueue);
     }
 
@@ -178,7 +174,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         IMaterial targetMaterial,
         BuildingMaterialManagement manager,
         bool isDecrease = false,
-        float minSupport = -1f)
+        float minSupport = -1f)//비지력 전파
     {
         if (!IsValidMaterial(targetMaterial))
         {
@@ -199,15 +195,15 @@ public class StructuralIntegritySolver : MonoBehaviour
         neighbors.Clear();
         currentNeighbors.Clear();
 
-        AddNeighbors(targetMaterial, neighbors);
+        AddNeighbors(targetMaterial, neighbors);//타겟 자재와 연결된 자재만 모두 등록(타겟 자재는 등록 X)
 
         if (isDecrease)
         {
-            neighbors.Add(targetMaterial);
+            neighbors.Add(targetMaterial);//삭제가 아닌 감소일 경우 타겟 자재도 포함
         }
         else
         {
-            RemoveTargetFromItsParentAndChild(targetMaterial);
+            RemoveTargetFromItsParentAndChild(targetMaterial);//삭제일 경우 현재 자재를 그래프 관계에서 끊어냄
         }
 
         for (int i = 0; i < neighbors.Count; i++)
@@ -215,16 +211,16 @@ public class StructuralIntegritySolver : MonoBehaviour
             IMaterial neighbor = neighbors[i];
             if (IsValidMaterial(neighbor) && !cluster.Contains(neighbor))
             {
-                GatherCluster(neighbor);
+                GatherCluster(neighbor);//연결된 자재 모아옴
             }
         }
 
-        foreach (IMaterial material in cluster)
+        foreach (IMaterial material in cluster)//모두 0으로 지지력 초기화
         {
             material.SupportValue = 0f;
         }
 
-        foreach (IMaterial material in cluster)
+        foreach (IMaterial material in cluster)//땅에 있는 자재를 시작점으로 다중 시작점
         {
             if (manager.IsTouchingGround(material.GetGameObject()))
             {
@@ -234,10 +230,10 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
 
         Profiler.BeginSample("Support Propagation BFS");
-        PropagateMaximumSupport(bfsQueue);
+        PropagateMaximumSupport(bfsQueue);//지지력이 증가하는 경우만 업데이트 하도록 그래프탐색
         Profiler.EndSample();
 
-        foreach (IMaterial material in cluster)
+        foreach (IMaterial material in cluster)//지지력이 기준 미달인 자재만 따로 모음
         {
             if (material.SupportValue < supportThreshold)
             {
@@ -248,7 +244,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         EnqueueCollapses(removalQueue);
     }
 
-    public void RemoveTargetFromItsParentAndChild(IMaterial material)
+    public void RemoveTargetFromItsParentAndChild(IMaterial material)//해당 자재 지지력 그래프에서 제거
     {
         if (material == null)
         {
@@ -284,7 +280,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         RemoveTargetFromItsParentAndChild(material);
     }
 
-    public void UpdateParentsAndChildren(IMaterial newMaterial)
+    public void UpdateParentsAndChildren(IMaterial newMaterial)//위치 및 선후 관계에 따라 부모 자식  구분해서 등록
     {
         if (!IsValidMaterial(newMaterial))
         {
@@ -349,7 +345,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
     }
 
-    public void ConnectParentAndChild(IMaterial parent, IMaterial child)
+    public void ConnectParentAndChild(IMaterial parent, IMaterial child)//그래프에 추가
     {
         if (parent == null || child == null || parent == child)
         {
@@ -367,7 +363,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
     }
 
-    private void PropagateMaximumSupport(Queue<IMaterial> queue)
+    private void PropagateMaximumSupport(Queue<IMaterial> queue)//지지력이 올라가는 경우만 업데이트
     {
         while (queue.Count > 0)
         {
@@ -377,8 +373,7 @@ public class StructuralIntegritySolver : MonoBehaviour
                 continue;
             }
 
-            float offeredSupport =
-                current.SupportValue * GetDecayValueByMaterialType(current);
+            float offeredSupport = current.SupportValue * GetDecayValueByMaterialType(current);//다음 자재 지지력
             currentNeighbors.Clear();
             AddNeighbors(current, currentNeighbors);
 
@@ -397,7 +392,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
     }
 
-    private void GatherCluster(IMaterial startNode)
+    private void GatherCluster(IMaterial startNode)//시작 노드와 연결된 자재 목록 가져옴
     {
         bfsQueue.Clear();
         bfsQueue.Enqueue(startNode);
@@ -412,6 +407,7 @@ public class StructuralIntegritySolver : MonoBehaviour
             for (int i = 0; i < gatherNeighbors.Count; i++)
             {
                 IMaterial linkedMaterial = gatherNeighbors[i];
+
                 if (IsValidMaterial(linkedMaterial) && cluster.Add(linkedMaterial))
                 {
                     bfsQueue.Enqueue(linkedMaterial);
@@ -420,9 +416,9 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
     }
 
-    private void EnqueueCollapses(Queue<IMaterial> collapsedMaterials)
+    private void EnqueueCollapses(Queue<IMaterial> collapsedMaterials)//연쇄 붕괴 
     {
-        while (collapsedMaterials.Count > 0)
+        while (collapsedMaterials.Count > 0)//지지력 기준 미달 모으기
         {
             IMaterial material = collapsedMaterials.Dequeue();
             if (IsValidMaterial(material) && pendingCollapseSet.Add(material))
@@ -433,11 +429,11 @@ public class StructuralIntegritySolver : MonoBehaviour
 
         if (pendingCollapseQueue.Count > 0 && collapseRoutine == null)
         {
-            collapseRoutine = StartCoroutine(CollapsePendingWithDelay());
+            collapseRoutine = StartCoroutine(CollapsePendingWithDelay());//연쇄 붕괴 시작
         }
     }
 
-    private IEnumerator CollapsePendingWithDelay()
+    private IEnumerator CollapsePendingWithDelay()//붕괴 로직
     {
         WaitForSeconds wait = collapseDelay > 0f ? new WaitForSeconds(collapseDelay) : null;
 
@@ -448,10 +444,8 @@ public class StructuralIntegritySolver : MonoBehaviour
 
             if (IsValidMaterial(target) && target.SupportValue < minimumSupportValue)
             {
-                // A delayed collapse can be cancelled naturally if a newly placed support
-                // restores this material before its turn in the queue.
-                RemoveTargetFromItsParentAndChild(target);
-                buildingMaterialManagement?.DestroyProcess(target);
+                RemoveTargetFromItsParentAndChild(target);//그래프 연결 해제
+                buildingMaterialManagement?.DestroyProcess(target);//풀 반환
             }
 
             if (wait != null)
@@ -512,7 +506,7 @@ public class StructuralIntegritySolver : MonoBehaviour
         }
     }
 
-    private void EnsureQueryBuffer()
+    private void EnsureQueryBuffer()//버퍼 할당
     {
         int capacity = Mathf.Max(8, queryCapacity);
         if (hitColliders == null || hitColliders.Length != capacity)

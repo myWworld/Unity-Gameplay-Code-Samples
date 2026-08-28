@@ -2,8 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Low-level world commit and visual feedback component.
-/// High-level placement/removal orchestration lives in BuildingPlacementService and BuildingRemovalService.
+///실제 배치 삭제 그리고 자재 색 업데이트 담당
 /// </summary>
 public class BuildOrRemove : MonoBehaviour
 {
@@ -86,26 +85,47 @@ public class BuildOrRemove : MonoBehaviour
         PlaceMaterial(previewObject, pivotPosition);
     }
 
-    public bool PlaceMaterial(GameObject materialObject, Vector3 pivotPosition)
+    public bool PlaceMaterial(GameObject materialObject, Vector3 pivotPosition)//자재 실제로 배치
     {
         ResolveDependencies();
-        if (materialObject == null || snapController == null)
+        if (materialObject == null)
         {
             return false;
         }
 
         previewObject = materialObject;
-        snapController.UpdateAnchorAndMaterialPos(materialObject.transform, pivotPosition);
+        UpdateAnchorAndMaterialPos(materialObject.transform, pivotPosition);//좌표 확정
         RuntimePlacedBuildingMarker.Ensure(materialObject);
 
         if (materialObject.CompareTag("Walkable") && partialNavMeshBuilder != null)
         {
-            partialNavMeshBuilder.UpdateNavMeshAt(materialObject);
+            partialNavMeshBuilder.UpdateNavMeshAt(materialObject);//걸을 수 있는 자재는 비동기 navMesh 업데이트 실행
         }
 
-        previewHighlight.Restore();
+        previewHighlight.Restore();//색깔 원래대로
         highlightedObject = null;
         return true;
+    }
+
+
+    public void UpdateAnchorAndMaterialPos(Transform materialTransform, Vector3 newPosition)//배치 좌표 확정
+    {
+        if (materialTransform == null ||
+            !materialTransform.gameObject.TryGetComponent(out IMaterial material))
+        {
+            return;
+        }
+
+        GameObject pivot = material.GetPivot();
+        if (pivot == null)
+        {
+            materialTransform.position = newPosition;
+            return;
+        }
+
+        Vector3 offset = material.GetOffsetBetweenObjAndAnchor();
+        pivot.transform.position = newPosition;
+        materialTransform.position = newPosition + offset;
     }
 
     public void RemoveMaterial(GameObject target)
@@ -113,7 +133,7 @@ public class BuildOrRemove : MonoBehaviour
         TryRemoveMaterial(target);
     }
 
-    public bool TryRemoveMaterial(GameObject target)
+    public bool TryRemoveMaterial(GameObject target)//실제 제거
     {
         ResolveDependencies();
         if (target == null || buildingMaterialManagement == null || structuralIntegritySolver == null)
@@ -121,7 +141,7 @@ public class BuildOrRemove : MonoBehaviour
             return false;
         }
 
-        GameObject removeTarget = ResolveMaterialRoot(target);
+        GameObject removeTarget = ResolveMaterialRoot(target);//철거 대상 루트 가져옴
         if (removeTarget == null || !IsRemovableLayer(removeTarget.layer))
         {
             return false;
@@ -132,14 +152,14 @@ public class BuildOrRemove : MonoBehaviour
             return false;
         }
 
-        ResetRemoveCandidate();
-        structuralIntegritySolver.HandleMaterialPropagate(material, buildingMaterialManagement);
-        material.ItemDrop();
-        buildingMaterialManagement.HideMaterial(removeTarget);
+        ResetRemoveCandidate();//색깔 원상태로 복귀
+        structuralIntegritySolver.HandleMaterialPropagate(material, buildingMaterialManagement);//제거후 지지력 재전파
+        material.ItemDrop();//아이템 드롭
+        buildingMaterialManagement.HideMaterial(removeTarget);//풀에 반환
         return true;
     }
 
-    public void UpdatePreview(GameObject currentObject, GameObject target)
+    public void UpdatePreview(GameObject currentObject, GameObject target)//프리뷰 자재 색깔 변경용 캐시 저장
     {
         previewObject = currentObject;
         GameObject nextHighlightTarget = target != null ? target : previewObject;
@@ -286,8 +306,7 @@ public class BuildOrRemove : MonoBehaviour
     {
         int layer = !canPlace
             ? layerRed
-            : supportValue > 0.4f ? layerGreen : layerYellow;
-        previewHighlight.Apply(target, layer);
+            : supportValue > 0.4f ? layerGreen : layerYellow;  previewHighlight.Apply(target, layer);//지지력 배치 가능여부에 따라 다른 색깔
     }
 
     private void ResolveDependencies()

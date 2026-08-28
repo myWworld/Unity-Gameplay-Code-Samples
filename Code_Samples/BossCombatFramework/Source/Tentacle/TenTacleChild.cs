@@ -54,13 +54,13 @@ public abstract class TenTacleChild : MonoBehaviour
     {
         if (mAnimal != null)
         {
-            mAnimal.OnModeEnd.AddListener(OnMalbersModeEnded);
+            mAnimal.OnModeEnd.AddListener(OnMalbersModeEnded);//
             //mAnimal.OnStateChange.AddListener((stateID) =>
             //{
             //    //UnityEngine.Debug.Log($"[{gameObject.name}] 상태 변경됨! 새로운 State ID: {stateID}");
             //});
         }
-        StartCoroutine(DelayedReset());
+        StartCoroutine(DelayedReset());//활성화 시 상태 초기화
     }
 
     private void OnDisable()
@@ -93,9 +93,9 @@ public abstract class TenTacleChild : MonoBehaviour
     {
         ForceClearBusyState();
     }
-    public void AE_TenTacleOnDeath()
+    public void AE_TenTacleOnDeath()//사망시 풀로 반환
     {
-        if (!IsValidDeath()) return;
+        if (!IsValidDeath()) return;//진짜 죽음인지 체크
 
         if (turnAndAttackCoroutine != null)
         {
@@ -132,8 +132,10 @@ public abstract class TenTacleChild : MonoBehaviour
 
     }
 
-    public abstract void ReturnToPool();
-    public abstract void ExecuteAttack(Vector3 targetPos, ModeID modeID, int abilityID);
+    public abstract void ReturnToPool();//풀로 반환
+    public abstract void ExecuteAttack(Vector3 targetPos, ModeID modeID, int abilityID);//공격 실행
+
+
     public void PoisonTelegraph(Vector3 scale)
     {
         effectManager.PlayEffect(poisonGas, projectileSocket.position, Quaternion.identity, scale);
@@ -153,7 +155,7 @@ public abstract class TenTacleChild : MonoBehaviour
             projectile.Play(data);
         }
     }
-    protected IEnumerator TurnAndAttackRoutine(Vector3 targetPos, ModeID modeID, int abilityID)
+    protected IEnumerator TurnAndAttackRoutine(Vector3 targetPos, ModeID modeID, int abilityID)//공통 공격 용 회전 루틴
     {
         isAttacking = true;
         Vector3 dirToTarget = targetPos - transform.position;

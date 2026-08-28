@@ -35,7 +35,7 @@ public class TentacleSpawnSkill : TentacleSkillBase
 
     public override void CancelSkill()
     {
-        if (isUninterruptibleSpawn) return;
+        if (isUninterruptibleSpawn) return;//오프닝 생성때는 취소 안함
 
         //for (int i = tenTacleManager.AllActivatedTentacles.Count - 1; i >= 0; i--)
         //{

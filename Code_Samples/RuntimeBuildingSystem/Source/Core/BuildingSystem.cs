@@ -6,10 +6,7 @@ using Project.Common.Runtime;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
-/// <summary>
-/// Facade and orchestrator for the runtime building flow.
-/// Preview state, placement commit, and removal behavior are delegated to focused runtime services.
-/// </summary>
+
 public class BuildingSystem : MonoBehaviour
 {
     public enum eBuildingMode
@@ -75,7 +72,7 @@ public class BuildingSystem : MonoBehaviour
     public bool bIsBuildingMode => isBuildingModeActive;
     public BuildingInputHandler InputHandler => inputHandler;
 
-    // Retained for compatibility with existing project code that may read this flag.
+  
     public bool pivotAttached;
 
     private eBuildingMode currentBuildingMode = eBuildingMode.Snap;
@@ -134,7 +131,7 @@ public class BuildingSystem : MonoBehaviour
             return;
         }
 
-        currentBuildingState?.Update(this);
+        currentBuildingState?.Update(this); //현재 상태 업데이트
     }
 
     private void OnDisable()
@@ -198,7 +195,7 @@ public class BuildingSystem : MonoBehaviour
         }
 
         IsBuildToolEquipped = isEquipped;
-        if (!isEquipped)
+        if (!isEquipped)//건축 모드 해제
         {
             if (currentBuildingState != IdleState)
             {
@@ -230,9 +227,7 @@ public class BuildingSystem : MonoBehaviour
         }
 
         IBuildingState nextState =
-            prevBuildingState == HoldingState && IsHoldingMaterial()
-                ? HoldingState
-                : IdleState;
+            prevBuildingState == HoldingState && IsHoldingMaterial() ? HoldingState : IdleState;
         ChangeState(nextState);
     }
 
@@ -367,13 +362,13 @@ public class BuildingSystem : MonoBehaviour
             return;
         }
 
-        // Keep direct external calls safe; the Holding state already performs this check.
-        if (!IsPossibleToPlace())
+
+        if (!IsPossibleToPlace())//배치여부 재판단
         {
             return;
         }
 
-        BuildingPlacementResult result = placementService.TryCommit(previewController, this);
+        BuildingPlacementResult result = placementService.TryCommit(previewController, this);//실제 배치
         if (!result.Succeeded)
         {
             return;
@@ -383,7 +378,7 @@ public class BuildingSystem : MonoBehaviour
 
         if (result.HasNextPreview && previewController.Begin(result.NextPreviewData))
         {
-            previewController.Show(result.PreservedPreviewRotation);
+            previewController.Show(result.PreservedPreviewRotation);//같은 자재 재료 있으면 이어서 보여줄 수 있게 가져오는 과정 반복
         }
 
         NotifyHoldingMaterialChanged();
@@ -564,9 +559,7 @@ public class BuildingSystem : MonoBehaviour
         }
 
         DecalProjector rangeDecal =
-            rangeIndicatorObj != null
-                ? rangeIndicatorObj.GetComponent<DecalProjector>()
-                : null;
+            rangeIndicatorObj != null ? rangeIndicatorObj.GetComponent<DecalProjector>() : null;
 
         previewController = new BuildingPreviewController(
             buildingMaterialManagement,

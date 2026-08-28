@@ -64,6 +64,7 @@ public class ActionJumpAttackNode : ActionPlayMode
         // 최종 jumpDuration 결정 (너무 짧거나 길지 않게 Clamp)
         jumpDuration = Mathf.Clamp(physicalDuration, 1.0f, 2.0f);
 
+        originalAnimSpeed = animator.speed;
         // 결정된 시간에 맞춰 애니메이터 속도 동기화
         animator.speed = clipAirTime / jumpDuration;
 
@@ -204,7 +205,7 @@ public class ActionJumpAttackNode : ActionPlayMode
         //UnityEngine.Debug.Log($"[ActionJumpAttackNode] ActionJumpAttackNode Stop");
         blackBoard.OnActionCancel -= JumpStop;
 
-        // 7. 상태 복구
+        //  상태 복구
         if (mAnimal != null)
         {
             mAnimal.ActiveState_Persisent(false);

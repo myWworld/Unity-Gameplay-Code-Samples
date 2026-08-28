@@ -39,7 +39,7 @@ public class GrabTentacleChild : TenTacleChild
 
     public void AE_ThrowPlayer(int DamageOn)
     {
-        var grabbedTarget = grabManager.CurrentTarget;
+        var grabbedTarget = grabManager.CurrentTarget;//그랩 매니져가 IGrabble만 반환함, 촉수는 관련해서 알 필요 없고 잡힌 쪽 로직만 호출해 주면됨
         bool damage = DamageOn == 1 ? true : false;
 
         if (grabbedTarget != null)
@@ -59,6 +59,6 @@ public class GrabTentacleChild : TenTacleChild
 
     public override void ReturnToPool()
     {
-        tentacleManager.BackToGrabTentaclePool(this.gameObject, 2f);
+        tentacleManager.BackToGrabTentaclePool(this.gameObject, 2f);//풀로반환 그랩용 촉수 관리용
     }
 }

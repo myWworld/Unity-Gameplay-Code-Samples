@@ -5,8 +5,7 @@ using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
 /// <summary>
-/// Holds the lifetime and transform state of the currently previewed building material.
-/// This is a plain runtime service, so no additional scene component is required.
+/// 현재 플레이어가 홀딩하고 있는 프리뷰 자재에 대한 처리를 담당
 /// </summary>
 public sealed class BuildingPreviewController
 {
@@ -26,11 +25,11 @@ public sealed class BuildingPreviewController
     private readonly Color inRangeColor;
     private readonly Color outOfRangeColor;
 
-    private IMaterial currentMaterial;
+    private IMaterial currentMaterial;//현재 자재
     private Transform currentTransform;
     private BuildingDataSO previousMaterialData;
 
-    private GameObject currentSnapPoint;
+    private GameObject currentSnapPoint;//현재 스냅 포인트
     private GameObject currentPivotPoint;
     private int currentSnapIndex;
 
@@ -93,31 +92,32 @@ public sealed class BuildingPreviewController
     public Vector3 PivotPosition => pivotPosition;
     public Vector3 MousePosition => inputHandler != null ? inputHandler.MousePos : pivotPosition;
 
-    public bool Begin(BuildingDataSO data)
+    public bool Begin(BuildingDataSO data)//data에 해당하는 자재로 프리뷰 변경
     {
         if (data == null || materialManagement == null)
         {
             return false;
         }
 
-        if (HasMaterial)
+        if (HasMaterial)//다른 거 홀딩 중이였다면 그 자재 풀에 반환
         {
             previousMaterialData = currentMaterial.Data;
             ReturnCurrentPreviewToPool();
         }
 
-        currentMaterial = materialManagement.GetMaterialFromPool(data, true);
+        currentMaterial = materialManagement.GetMaterialFromPool(data, true);//풀에서 바꿀 자재 꺼내옴
         if (currentMaterial == null || currentMaterial.GetGameObject() == null)
         {
-            ClearCurrentReferences(clearPreviousData: false);
+            ClearCurrentReferences(clearPreviousData: false);//자재 오류 처리
             return false;
         }
 
         if (previousMaterialData == null || previousMaterialData != currentMaterial.Data)
         {
-            currentSnapIndex = 0;
+            currentSnapIndex = 0;//전이랑 다른 자재일 경우 수동 스냅포인트 초기화
         }
 
+        //새 자재 관련 등록
         currentTransform = currentMaterial.GetGameObject().transform;
         previousPosition = currentTransform.position;
         SelectAnchorAtCurrentIndex();
@@ -137,23 +137,23 @@ public sealed class BuildingPreviewController
         }
 
         GameObject materialObject = CurrentGameObject;
-        currentTransform.SetParent(null);
+        currentTransform.SetParent(null);//풀에 있는 관리자 부모로부터 해제
 
         if (desiredWorldRotation.HasValue)
         {
             currentTransform.rotation = desiredWorldRotation.Value;
         }
 
-        materialManagement.DeActiveColliderAndLayer(materialObject);
+        materialManagement.DeActiveColliderAndLayer(materialObject);//콜라이더 비활성화로 잘못된 raycast 작동 및 플레이어와 충돌 방지
         snapController.ClearSnapState();
-        ClearSnappedTargetCache();
-        materialObject.SetActive(true);
+        ClearSnappedTargetCache();//스냅 상태 초기화
+        materialObject.SetActive(true);//자재 렌더 활성화
 
-        inputHandler.UpdateInputData();
-        UpdatePosition(isFirstSync: true, debug: false);
+        inputHandler.UpdateInputData();//마우스 위치 업데이트
+        UpdatePosition(isFirstSync: true, debug: false);//처음 자재 보일때 마우스쪽으로 보일 수 있도록 동기화
     }
 
-    public void HideTemporarily()
+    public void HideTemporarily()//잠시 렌더 비활성화
     {
         GameObject materialObject = CurrentGameObject;
         if (materialObject != null)
@@ -169,20 +169,20 @@ public sealed class BuildingPreviewController
             return;
         }
 
-        inputHandler.UpdateInputData();
+        inputHandler.UpdateInputData();//raycast 정보 업데이트(마우스 위치, raycast된 오브젝트)
 
         bool isOutOfRange = IsOutsidePlacementRange();
         SetRangeIndicator(isOutOfRange);
 
         GameObject materialObject = CurrentGameObject;
-        if (materialObject != null && materialObject.activeSelf == isOutOfRange)
+        if (materialObject != null && materialObject.activeSelf == isOutOfRange)//플레이어 기준 정해진 범위 이상으로 있을 시 렌더 안함
         {
             materialObject.SetActive(!isOutOfRange);
         }
 
         if (!isOutOfRange)
         {
-            UpdatePosition(isFirstSync: false, debug: false);
+            UpdatePosition(isFirstSync: false, debug: false);//위치 업데이트
         }
     }
 
@@ -193,10 +193,10 @@ public sealed class BuildingPreviewController
             return;
         }
 
-        ApplySnapFreeModifier();
+        ApplySnapFreeModifier();//스냅 모드 업데이트
 
-        Vector3 targetPosition = CalculateTargetPosition(isFirstSync);
-        targetPosition = AdjustSpecialPreviewPosition(targetPosition);
+        Vector3 targetPosition = CalculateTargetPosition(isFirstSync);//스냅 모드에 따라 타겟 위치 계산
+        targetPosition = AdjustSpecialPreviewPosition(targetPosition);//보트처럼 특이 자재일 경우 추가 연산
         pivotPosition = targetPosition;
 
         if (debug)
@@ -206,10 +206,10 @@ public sealed class BuildingPreviewController
 
         if (isInventoryOpen != null && isInventoryOpen() && playerTransform != null)
         {
-            targetPosition = playerTransform.position + playerTransform.forward * 2f;
+            targetPosition = playerTransform.position + playerTransform.forward * 2f;//인벤토리에서 자재 선택할때 플레이어 앞 쪽에 보이도록
         }
 
-        InterpolateVisualTo(targetPosition);
+        InterpolateVisualTo(targetPosition);//Root와 Visual 분리 이동로직
         previousPosition = currentTransform.position;
     }
 
@@ -234,31 +234,29 @@ public sealed class BuildingPreviewController
             return;
         }
 
-        Vector3 pivot = currentSnapPoint != null
-            ? currentSnapPoint.transform.position
-            : currentTransform.position;
+        Vector3 pivot = currentSnapPoint != null ? currentSnapPoint.transform.position : currentTransform.position;
 
         currentTransform.RotateAround(pivot, Vector3.up, angle);
     }
 
-    public void ToggleSnapMode()
+    public void ToggleSnapMode()//스냅 모드 변경
     {
         BuildingSystem.eBuildingMode mode = getBuildingMode();
         if (mode == BuildingSystem.eBuildingMode.Snap ||
             mode == BuildingSystem.eBuildingMode.SnapFree)
         {
-            setBuildingMode(BuildingSystem.eBuildingMode.ManualSnap);
+            setBuildingMode(BuildingSystem.eBuildingMode.ManualSnap);// 수동 스냅
             CycleSnapPoint(0);
         }
         else
         {
-            setBuildingMode(BuildingSystem.eBuildingMode.Snap);
+            setBuildingMode(BuildingSystem.eBuildingMode.Snap);//자동 스냅
             snapController.ClearSnapState();
             ClearSnappedTargetCache();
         }
     }
 
-    public void CycleSnapPoint(int direction)
+    public void CycleSnapPoint(int direction)//수동 스냅에서 사용할 스냅 포인트 변경하는 로직
     {
         if (!HasMaterial)
         {
@@ -281,7 +279,8 @@ public sealed class BuildingPreviewController
         for (int checkedCount = 0; checkedCount < count; checkedCount++)
         {
             GameObject candidate = currentMaterial.GetAnchorByIndx(index);
-            if (IsManualSnapAnchor(candidate))
+
+            if (IsManualSnapAnchor(candidate))//면 계산에 사용되는 포인트말고 스냅에 사용되는 포인트인지 체크
             {
                 currentSnapIndex = index;
                 currentSnapPoint = candidate;
@@ -298,22 +297,22 @@ public sealed class BuildingPreviewController
         AttachSnapIndicator();
     }
 
-    public GameObject ResolveSnappedTargetRoot()
+    public GameObject ResolveSnappedTargetRoot()//스냅된 자재 캐시 업데이트(캐시에 있는 거랑 같을 시 그대로 반환)
     {
         if (snapController == null || !snapController.isSnapped || snapController.bestWorldSnap == null)
         {
-            ClearSnappedTargetCache();
+            ClearSnappedTargetCache();//스냅된 거 없을 시 캐시 초기화
             return null;
         }
 
         if (lastSnappedPivot == snapController.bestWorldSnap)
         {
-            return cachedSnappedTargetRoot;
+            return cachedSnappedTargetRoot;//새 스냅포인트가 이전 캐시된 거랑 같으면 그대로 반환
         }
 
         IMaterial parentMaterial = snapController.bestWorldSnap.GetComponentInParent<IMaterial>();
         cachedSnappedTargetRoot = parentMaterial != null ? parentMaterial.GetGameObject() : null;
-        lastSnappedPivot = snapController.bestWorldSnap;
+        lastSnappedPivot = snapController.bestWorldSnap;//캐시 업데이트
         return cachedSnappedTargetRoot;
     }
 
@@ -329,7 +328,7 @@ public sealed class BuildingPreviewController
         ClearSnappedTargetCache();
     }
 
-    public void Cancel()
+    public void Cancel()//상태 초기화 풀 반환 , 스냅 상태 초기화 등..
     {
         if (HasMaterial)
         {
@@ -370,16 +369,16 @@ public sealed class BuildingPreviewController
     {
         if (snapIndicator != null)
         {
-            UnityEngine.Object.Destroy(snapIndicator);
+            UnityEngine.Object.Destroy(snapIndicator);//실제로 스냅 포인트 표시 객체 파괴
             snapIndicator = null;
         }
     }
 
-    private Vector3 CalculateTargetPosition(bool isFirstSync)
+    private Vector3 CalculateTargetPosition(bool isFirstSync)//스냅 모드에따른 위치 계산
     {
         BuildingSystem.eBuildingMode mode = getBuildingMode();
 
-        if (isFirstSync)
+        if (isFirstSync)//처음 동기화용일 경우 마우스가 있는 위치에 가져다 두고 스냅은 하지 않음
         {
             if (mode == BuildingSystem.eBuildingMode.Snap ||
                 mode == BuildingSystem.eBuildingMode.SnapFree)
@@ -403,7 +402,7 @@ public sealed class BuildingPreviewController
                 bIsFree: true);
         }
 
-        switch (mode)
+        switch (mode)//스냅 모드에 따라 가장 가까운 자재의 스냅 포인트 가져옴
         {
             case BuildingSystem.eBuildingMode.Snap:
                 return snapController.AdjustMaterialWithClosestSnapPoint(
@@ -462,35 +461,33 @@ public sealed class BuildingPreviewController
         return targetPosition;
     }
 
-    private void InterpolateVisualTo(Vector3 targetPosition)
+    private void InterpolateVisualTo(Vector3 targetPosition)//논리좌표는 바로 이동, 비쥬얼 좌표는 보간으로 자연스럽게 이동하도록
     {
         Transform visual = currentMaterial.GetVisualMesh();
         Vector3 previousVisualWorldPosition = visual != null ? visual.position : currentTransform.position;
         Quaternion previousVisualWorldRotation = visual != null ? visual.rotation : currentTransform.rotation;
 
-        currentTransform.position = targetPosition;
+        currentTransform.position = targetPosition;//실제 논리 좌표는 바로 이동
 
         if (visual == null)
         {
             return;
         }
 
-        Vector3 targetWorldPosition = currentTransform.TransformPoint(currentMaterial.GetDefaultLocalPos());
+        Vector3 targetWorldPosition = currentTransform.TransformPoint(currentMaterial.GetDefaultLocalPos());//비쥬얼 지역 위치활용해서 현재 타겟 기준 월드 좌표로 변환
         Quaternion targetWorldRotation = currentTransform.rotation * currentMaterial.GetDefaultLocalRot();
-        float interpolation = visualInterpolationSpeed <= 0f
-            ? 1f
-            : Mathf.Clamp01(Time.deltaTime * visualInterpolationSpeed);
+        float interpolation = visualInterpolationSpeed <= 0f ? 1f : Mathf.Clamp01(Time.deltaTime * visualInterpolationSpeed);
 
-        visual.position = Vector3.Lerp(previousVisualWorldPosition, targetWorldPosition, interpolation);
+        visual.position = Vector3.Lerp(previousVisualWorldPosition, targetWorldPosition, interpolation);//비쥬얼 메시는 보간으로 자연스럽게 이동
         visual.rotation = Quaternion.Lerp(previousVisualWorldRotation, targetWorldRotation, interpolation);
     }
 
-    private void ApplySnapFreeModifier()
+    private void ApplySnapFreeModifier()//스냅 모드 설정
     {
-        bool modifierHeld = inputHandler.IsAnyKeyHeld(primarySnapFreeKey, secondarySnapFreeKey);
+        bool modifierHeld = inputHandler.IsAnyKeyHeld(primarySnapFreeKey, secondarySnapFreeKey);//이 키가 눌린경우
         BuildingSystem.eBuildingMode mode = getBuildingMode();
 
-        if (modifierHeld)
+        if (modifierHeld)//자유 배치 상태로 전환
         {
             if (mode == BuildingSystem.eBuildingMode.Snap)
             {
@@ -512,11 +509,11 @@ public sealed class BuildingPreviewController
             return;
         }
 
-        if (mode == BuildingSystem.eBuildingMode.SnapFree)
+        if (mode == BuildingSystem.eBuildingMode.SnapFree)//자동스냅
         {
             setBuildingMode(BuildingSystem.eBuildingMode.Snap);
         }
-        else if (mode == BuildingSystem.eBuildingMode.ManualSnapFree)
+        else if (mode == BuildingSystem.eBuildingMode.ManualSnapFree)//수동스냅
         {
             setBuildingMode(BuildingSystem.eBuildingMode.ManualSnap);
             EnsureManualSnapPoint();
@@ -524,7 +521,7 @@ public sealed class BuildingPreviewController
         }
     }
 
-    private bool IsOutsidePlacementRange()
+    private bool IsOutsidePlacementRange()//마우스 위치와 플레이어 위치가 정해진 거리내에 있는 지
     {
         if (inputHandler.CurHitData.collider == null || playerTransform == null)
         {
@@ -545,7 +542,7 @@ public sealed class BuildingPreviewController
         }
     }
 
-    private void ReturnCurrentPreviewToPool()
+    private void ReturnCurrentPreviewToPool()//풀에 반환
     {
         GameObject materialObject = CurrentGameObject;
         if (materialObject != null)
@@ -623,7 +620,7 @@ public sealed class BuildingPreviewController
         snapIndicator = UnityEngine.Object.Instantiate(snapIndicatorPrefab);
     }
 
-    private void AttachSnapIndicator()
+    private void AttachSnapIndicator()//건축물 스냅 포인트에 붙는 초록새 구 표시
     {
         EnsureSnapIndicator();
         if (snapIndicator == null)
@@ -661,14 +658,13 @@ public sealed class BuildingPreviewController
         cachedSnappedTargetRoot = null;
     }
 
-    private static bool IsManualSnapAnchor(GameObject anchor)
+    private static bool IsManualSnapAnchor(GameObject anchor)//스냅 포인트인지 일반 피벗인지
     {
         return anchor != null &&
-               (anchor.CompareTag(LayerAndTagConstants.Tag_Pivot) ||
-                anchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot));
+               (anchor.CompareTag(LayerAndTagConstants.Tag_Pivot) || anchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot));
     }
 
-    private static int WrapIndex(int index, int count)
+    private static int WrapIndex(int index, int count)//스냅 포인트 인덱스 벗어나지 않고 돌게
     {
         if (count <= 0)
         {

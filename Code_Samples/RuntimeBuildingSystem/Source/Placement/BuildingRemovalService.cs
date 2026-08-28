@@ -28,46 +28,46 @@ public sealed class BuildingRemovalService
             return;
         }
 
-        inputHandler.UpdateInputData();
-        GameObject removeTarget = ResolveMaterialRoot(inputHandler.RayCastedObject);
+        inputHandler.UpdateInputData();//raycast 정보 업데이트
+        GameObject removeTarget = ResolveMaterialRoot(inputHandler.RayCastedObject);//철거 대상의 root가져옴
 
-        if (removeTarget == null || !placementValidator.IsRemovableLayer(removeTarget.layer))
+        if (removeTarget == null || !placementValidator.IsRemovableLayer(removeTarget.layer))//레이어가 철거 가능한 레이어인지 체크
         {
             buildOrRemove.ResetRemoveCandidate();
             return;
         }
 
-        buildOrRemove.RemoveCandidateColorChange(removeTarget, Color.blue);
-        if (inputHandler.WasPlacePressed)
+        buildOrRemove.RemoveCandidateColorChange(removeTarget, Color.blue);//철거 대상 색깔 파란색으로 변경
+        if (inputHandler.WasPlacePressed)//클릭시
         {
-            TryRemove(removeTarget, owner);
+            TryRemove(removeTarget, owner);//철거 진행
         }
     }
 
-    public bool TryRemove(GameObject target, BuildingSystem owner)
+    public bool TryRemove(GameObject target, BuildingSystem owner)//철거 진행 로직
     {
         if (target == null || owner == null || buildOrRemove == null)
         {
             return false;
         }
 
-        bool removed = buildOrRemove.TryRemoveMaterial(target);
-        if (!removed)
+        bool removed = buildOrRemove.TryRemoveMaterial(target);//실제로 지우는 과정
+        if (!removed)//실패 했을 시
         {
             return false;
         }
 
-        placementValidator?.ResetCache();
-        ItemDurabilityUtility.TryConsumeEquipped(ItemDurabilityReason.BuildAction, owner);
+        placementValidator?.ResetCache();//캐시 초기화
+        ItemDurabilityUtility.TryConsumeEquipped(ItemDurabilityReason.BuildAction, owner);//철거 시 아이템 내구도 소모
         return true;
     }
 
     public void ClearCandidate()
     {
-        buildOrRemove?.ResetRemoveCandidate();
+        buildOrRemove?.ResetRemoveCandidate();//파란색 표시가 있던 철거 대상 초기화
     }
 
-    private static GameObject ResolveMaterialRoot(GameObject candidate)
+    private static GameObject ResolveMaterialRoot(GameObject candidate)//자식 오브젝트가 들어왔어도 IMaterial이 있는 최상위 루트를 반환
     {
         if (candidate == null)
         {

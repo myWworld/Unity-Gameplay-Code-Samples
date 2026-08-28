@@ -2,7 +2,7 @@ using KWS;
 using MalbersAnimations.Events;
 using UnityEngine;
 
-public class PlacementValidator : MonoBehaviour
+public class PlacementValidator : MonoBehaviour//설치 가능여부 검사 기능
 {
     [Header("References")]
     [SerializeField] private BuildingMaterialManagement buildingMaterialManagement;
@@ -12,7 +12,7 @@ public class PlacementValidator : MonoBehaviour
     [SerializeField] private PlayerInventoryAdapter inventoryAdapter;
 
     [Header("Settings")]
-    public bool bConstructionMode = false;
+    public bool bConstructionMode = false;//자재 없이 무한 건축 가능한지
     [SerializeField] private bool showLegacyLackOfRequirementNotification = false;
     public MEvent OnReqIsNotEnough;
 
@@ -40,7 +40,7 @@ public class PlacementValidator : MonoBehaviour
         ResetCache();
     }
 
-    public bool CheckIfMeetRequirement(BuildingDataSO data)
+    public bool CheckIfMeetRequirement(BuildingDataSO data)//현재 필요한 자재가 인벤토리에 있는지 체크
     {
         if (bConstructionMode)
         {
@@ -83,7 +83,7 @@ public class PlacementValidator : MonoBehaviour
         GameObject currentMaterial,
         GameObject snappedTarget,
         Vector3 mousePosition,
-        Vector3 pivotPosition)
+        Vector3 pivotPosition)//모든 설치 가능 조건을 만족하는지 체크
     {
         if (currentMaterial == null || !currentMaterial.activeSelf ||
             buildOrRemove == null || snapController == null || integritySolver == null ||
@@ -101,12 +101,13 @@ public class PlacementValidator : MonoBehaviour
 
         int materialId = currentMaterial.GetInstanceID();
         int targetId = snappedTarget != null ? snappedTarget.GetInstanceID() : 0;
+
         bool cacheHit =
             materialId == lastCheckedMaterialId &&
             targetId == lastCheckedTargetId &&
             (pivotPosition - lastCheckedPivotPos).sqrMagnitude < 0.0005f &&
             Quaternion.Angle(currentMaterial.transform.rotation, lastCheckedRotation) < 0.1f &&
-            lastCheckedConstructionMode == bConstructionMode;
+            lastCheckedConstructionMode == bConstructionMode;//이미 캐시 된건지
 
         if (!cacheHit)
         {
@@ -116,13 +117,12 @@ public class PlacementValidator : MonoBehaviour
             lastCheckedRotation = currentMaterial.transform.rotation;
             lastCheckedConstructionMode = bConstructionMode;
 
-            EvaluateGeometryAndSupport(material, currentMaterial, mousePosition, pivotPosition);
+            EvaluateGeometryAndSupport(material, currentMaterial, mousePosition, pivotPosition);//지지력이 충분한지 + 범위내 인지
         }
 
-        // Resources can change while the preview pose remains cached, so this check is intentionally not cached.
-        bool hasResources = bConstructionMode || CheckMaterialRequirements(material, notifyIfMissing: false);
-        bool canPlace = cachedGeometryAndSupportResult && hasResources;
-        return buildOrRemove.UpdatePreviewHighlight(canPlace, cachedSupportValue);
+        bool hasResources = bConstructionMode || CheckMaterialRequirements(material, notifyIfMissing: false);//자재가 충분한 지
+        bool canPlace = cachedGeometryAndSupportResult && hasResources;//최종 배치판단
+        return buildOrRemove.UpdatePreviewHighlight(canPlace, cachedSupportValue);//배치 가능 및 지지력 여부에 따라 자재 색깔이 바뀌도록
     }
 
     public float GetCachedSupportValue()
@@ -151,22 +151,19 @@ public class PlacementValidator : MonoBehaviour
         IMaterial material,
         GameObject materialObject,
         Vector3 mousePosition,
-        Vector3 pivotPosition)
+        Vector3 pivotPosition)//예측 지지력이 설치 가능한 수준인지 판단
     {
         bool isBoat = material.GetBuildingMaterialType() == eBuildingMaterial.Boat;
-        if (isBoat)
+
+        if (isBoat)//보트의 경우 별개 체크
         {
-            bool isOnWater = WaterSystem.IsPositionOnWaterSurface(mousePosition);
-            cachedGeometryAndSupportResult =
-                isOnWater && snapController.CanPlaceMaterial(mousePosition, materialObject);
+            bool isOnWater = WaterSystem.IsPositionOnWaterSurface(mousePosition);//물 위인지 판단
+            cachedGeometryAndSupportResult = isOnWater && snapController.CanPlaceMaterial(mousePosition, materialObject);
             cachedSupportValue = integritySolver.BaseSupportValue;
             return;
         }
 
-        cachedSupportValue = integritySolver.PredictSupportValue(
-            pivotPosition,
-            materialObject,
-            buildingMaterialManagement);
+        cachedSupportValue = integritySolver.PredictSupportValue(pivotPosition, materialObject, buildingMaterialManagement);
 
         cachedGeometryAndSupportResult =
             snapController.CanPlaceMaterial(mousePosition, materialObject) &&
@@ -198,7 +195,7 @@ public class PlacementValidator : MonoBehaviour
         return hasRequirements;
     }
 
-    private void NotifyMissingRequirement(bool shouldNotify)
+    private void NotifyMissingRequirement(bool shouldNotify)//자재 부족시 UI에 알림ㄴ
     {
         if (shouldNotify && showLegacyLackOfRequirementNotification)
         {
