@@ -2,7 +2,7 @@ using Project.Gameplay.Items;
 using UnityEngine;
 
 /// <summary>
-/// Resolves, highlights, and removes the current raycast target.
+/// 철거관련 실제 삭제 전까지의 로직 철거 커밋까지
 /// </summary>
 public sealed class BuildingRemovalService
 {
@@ -38,6 +38,7 @@ public sealed class BuildingRemovalService
         }
 
         buildOrRemove.RemoveCandidateColorChange(removeTarget, Color.blue);//철거 대상 색깔 파란색으로 변경
+
         if (inputHandler.WasPlacePressed)//클릭시
         {
             TryRemove(removeTarget, owner);//철거 진행

@@ -12,15 +12,21 @@ public sealed class BuildingPreviewController
     private readonly BuildingMaterialManagement materialManagement;
     private readonly SnapController snapController;
     private readonly BuildingInputHandler inputHandler;
+
     private readonly Transform playerTransform;
+
     private readonly Func<bool> isInventoryOpen;
     private readonly Func<BuildingSystem.eBuildingMode> getBuildingMode;
     private readonly Action<BuildingSystem.eBuildingMode> setBuildingMode;
+
     private readonly KeyCode primarySnapFreeKey;
     private readonly KeyCode secondarySnapFreeKey;
+
     private readonly float maxPlacementDistance;
     private readonly float visualInterpolationSpeed;
+
     private readonly GameObject snapIndicatorPrefab;
+
     private readonly DecalProjector rangeDecal;
     private readonly Color inRangeColor;
     private readonly Color outOfRangeColor;
@@ -120,10 +126,10 @@ public sealed class BuildingPreviewController
         //새 자재 관련 등록
         currentTransform = currentMaterial.GetGameObject().transform;
         previousPosition = currentTransform.position;
-        SelectAnchorAtCurrentIndex();
-        EnsureSnapIndicator();
-        AttachSnapIndicator();
-        ClearSnappedTargetCache();
+        SelectAnchorAtCurrentIndex();//첫 수동 스냅 포인트 설정
+        EnsureSnapIndicator();//스냅 위치 표시 구 없으면 새로 할당
+        AttachSnapIndicator();//표시 구 포인트에 붙여줌
+        ClearSnappedTargetCache();//이전 대상 스냅 포인트 초기화
         snapController.ClearSnapState();
         OnBuildingModeChanged(getBuildingMode());
         return true;
@@ -150,7 +156,7 @@ public sealed class BuildingPreviewController
         materialObject.SetActive(true);//자재 렌더 활성화
 
         inputHandler.UpdateInputData();//마우스 위치 업데이트
-        UpdatePosition(isFirstSync: true, debug: false);//처음 자재 보일때 마우스쪽으로 보일 수 있도록 동기화
+        UpdatePosition(isFirstSync: true, debug: false);//처음 자재 보일때 마우스쪽으로 보일 수 있도록 첫 동기화
     }
 
     public void HideTemporarily()//잠시 렌더 비활성화
@@ -206,7 +212,7 @@ public sealed class BuildingPreviewController
 
         if (isInventoryOpen != null && isInventoryOpen() && playerTransform != null)
         {
-            targetPosition = playerTransform.position + playerTransform.forward * 2f;//인벤토리에서 자재 선택할때 플레이어 앞 쪽에 보이도록
+            targetPosition = playerTransform.position + playerTransform.forward * 2f;//인벤토리열린 상태에선 자재 선택할때 플레이어 앞 쪽에 보이도록
         }
 
         InterpolateVisualTo(targetPosition);//Root와 Visual 분리 이동로직
@@ -242,6 +248,7 @@ public sealed class BuildingPreviewController
     public void ToggleSnapMode()//스냅 모드 변경
     {
         BuildingSystem.eBuildingMode mode = getBuildingMode();
+
         if (mode == BuildingSystem.eBuildingMode.Snap ||
             mode == BuildingSystem.eBuildingMode.SnapFree)
         {
@@ -455,7 +462,7 @@ public sealed class BuildingPreviewController
         if (WaterSystem.TryGetWaterHeight(targetPosition, out float waterHeight) &&
             currentMaterial is Boat boat)
         {
-            targetPosition.y = waterHeight + boat.PreviewHeightOffset;
+            targetPosition.y = waterHeight + boat.PreviewHeightOffset;//보트는 오프셋 적용
         }
 
         return targetPosition;
@@ -547,10 +554,10 @@ public sealed class BuildingPreviewController
         GameObject materialObject = CurrentGameObject;
         if (materialObject != null)
         {
-            currentMaterial?.ResetVisualTransform();
-            materialObject.SetActive(false);
-            materialManagement.ActivateColliderAndLayer(materialObject);
-            materialManagement.HideMaterial(materialObject);
+            currentMaterial?.ResetVisualTransform();//비쥬얼 용 tr 지역 위치 초기값으로 재설정
+            materialObject.SetActive(false);//렌더 안되게
+            materialManagement.ActivateColliderAndLayer(materialObject);//콜라이더 재활성화
+            materialManagement.HideMaterial(materialObject);//풀에 반환
         }
 
         DetachSnapIndicator();
@@ -573,7 +580,7 @@ public sealed class BuildingPreviewController
         }
     }
 
-    private void SelectAnchorAtCurrentIndex()
+    private void SelectAnchorAtCurrentIndex()//현재 스냅포인트 idx에 맞는 스냅포인트 Tr가져옴
     {
         List<GameObject> anchors = currentMaterial != null ? currentMaterial.GetAnchors() : null;
         if (anchors == null || anchors.Count == 0)

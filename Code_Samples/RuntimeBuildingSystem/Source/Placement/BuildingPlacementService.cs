@@ -15,7 +15,7 @@ public struct BuildingPlacementResult
 }
 
 /// <summary>
-/// 배치가능 자재를 실제로 배치하고 그래프 등록 배치 가능 여부 재검사후 실패시 롤백 성공 시 자원 내구도 소모
+/// 배치가능 자재를 실제로 배치하고 그래프 등록 배치 가능 여부 재검사후 실패시 롤백 성공 시 커밋 자원 내구도 소모
 /// </summary>
 public sealed class BuildingPlacementService
 {
@@ -51,8 +51,8 @@ public sealed class BuildingPlacementService
 
         GameObject materialObject = preview.CurrentGameObject;
         GameObject snappedTargetRoot = preview.ResolveSnappedTargetRoot();
-        return placementValidator.IsPossibleToPlace(
-            materialObject, snappedTargetRoot, preview.MousePosition, preview.PivotPosition);
+
+        return placementValidator.IsPossibleToPlace(materialObject, snappedTargetRoot, preview.MousePosition, preview.PivotPosition);
     }
 
     public BuildingPlacementResult TryCommit(BuildingPreviewController preview, BuildingSystem owner)//배치 단계 실제 포지션 결정은 BuildOrRemove에서

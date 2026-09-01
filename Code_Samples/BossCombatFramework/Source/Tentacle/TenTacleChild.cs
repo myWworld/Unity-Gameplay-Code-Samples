@@ -186,7 +186,7 @@ public abstract class TenTacleChild : MonoBehaviour
 
         if (mAnimal != null)
         {
-            bool isSuccess = mAnimal.Mode_TryActivate(modeID, abilityID);
+            bool isSuccess = mAnimal.Mode_TryActivate(modeID, abilityID);//행동 실행
 
         }
     }

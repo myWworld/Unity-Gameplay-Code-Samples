@@ -6,8 +6,8 @@ public class BuildingDataSO : ScriptableObject
 {
     [Header("Basic Information")]
     public string materialName;
-    public MaterialType materialType;
-    public eBuildingMaterial buildingMaterial;
+    public MaterialType materialType;//자재 타입(나무, 흙 등..)
+    public eBuildingMaterial buildingMaterial;//자재 종류
     public GameObject prefab;
 
     [Header("Support Settings")]
@@ -15,7 +15,7 @@ public class BuildingDataSO : ScriptableObject
     public float baseSupportValue = 1.2f; // 지면 접촉 시 기본 지지력
 
     [Header("Requirements")]
-    public List<ResourceRequirement> requirements;
+    public List<ResourceRequirement> requirements;//설치 시 필요 조건
 
 }
 

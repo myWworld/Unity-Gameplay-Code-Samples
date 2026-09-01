@@ -195,7 +195,7 @@ public class BuildingSystem : MonoBehaviour
         }
 
         IsBuildToolEquipped = isEquipped;
-        if (!isEquipped)//건축 모드 해제
+        if (!isEquipped)
         {
             if (currentBuildingState != IdleState)
             {
@@ -246,7 +246,7 @@ public class BuildingSystem : MonoBehaviour
         ChangeState(newState, isBuildingModeActive);
     }
 
-    public void ChangeState(IBuildingState newState, bool buildingModeActive)
+    public void ChangeState(IBuildingState newState, bool buildingModeActive)//건축 상태 변경
     {
         if (newState == null)
         {
@@ -268,7 +268,7 @@ public class BuildingSystem : MonoBehaviour
         OnBuildingModeChanged?.Invoke(currentBuildingState);
     }
 
-    public void ChangeHoldingMaterial(BuildingDataSO data)
+    public void ChangeHoldingMaterial(BuildingDataSO data)//자재 변경
     {
         if (!EnsureInitialized())
         {
@@ -299,7 +299,7 @@ public class BuildingSystem : MonoBehaviour
         return previewController != null ? previewController.CurrentMaterial : null;
     }
 
-    public void ShowMaterial()
+    public void ShowMaterial()//자재 보이게
     {
         previewController?.Show();
     }
@@ -309,7 +309,7 @@ public class BuildingSystem : MonoBehaviour
         previewController?.HideTemporarily();
     }
 
-    public void PosUpdate()
+    public void PosUpdate()//매 프레임 자재 위치 업데이트
     {
         previewController?.TickPosition();
     }
@@ -350,12 +350,12 @@ public class BuildingSystem : MonoBehaviour
         snapController?.ClearSnapState();
     }
 
-    public bool IsPossibleToPlace()
+    public bool IsPossibleToPlace()//배치 가능 여부
     {
         return placementService != null && placementService.CanPlace(previewController);
     }
 
-    public void PlaceMaterial()
+    public void PlaceMaterial()//배치로직
     {
         if (!EnsureInitialized() || previewController == null || !previewController.HasMaterial)
         {
@@ -374,7 +374,7 @@ public class BuildingSystem : MonoBehaviour
             return;
         }
 
-        previewController.DetachCommittedMaterial();
+        previewController.DetachCommittedMaterial();//프리뷰 자재관련 초기화
 
         if (result.HasNextPreview && previewController.Begin(result.NextPreviewData))
         {
@@ -384,22 +384,22 @@ public class BuildingSystem : MonoBehaviour
         NotifyHoldingMaterialChanged();
     }
 
-    public void ProcessRemoveMaterial()
+    public void ProcessRemoveMaterial()//삭제 검증 업데이트
     {
         removalService?.Tick(this);
     }
 
-    public void RemoveMaterial(GameObject targetObject)
+    public void RemoveMaterial(GameObject targetObject)//삭제 커밋
     {
         removalService?.TryRemove(targetObject, this);
     }
 
-    public void ClearRemoveCandidate()
+    public void ClearRemoveCandidate()//철거용 자재 기록 없앰(색깔 남아있는거 방지)
     {
         removalService?.ClearCandidate();
     }
 
-    public void GetBackToOtherMode()
+    public void GetBackToOtherMode()//원상 복구
     {
         previewController?.Cancel();
         removalService?.ClearCandidate();
@@ -409,7 +409,7 @@ public class BuildingSystem : MonoBehaviour
         NotifyHoldingMaterialChanged();
     }
 
-    public void RequestShowRequirements(BuildingDataSO data)
+    public void RequestShowRequirements(BuildingDataSO data)//인벤토리에서 선택한 자재 불러오는 로직 호출
     {
         if (data != null)
         {
@@ -417,7 +417,7 @@ public class BuildingSystem : MonoBehaviour
         }
     }
 
-    public void RequestHideRequirements()
+    public void RequestHideRequirements()//동일 자재 선택시 안 보이게 아닐 경우 보이게
     {
         IMaterial material = GetCurMaterial();
         if (material != null)

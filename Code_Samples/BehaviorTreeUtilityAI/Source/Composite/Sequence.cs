@@ -20,6 +20,7 @@ public class Sequence : CompositeNode
         {
             currentChildIndex = i;
             var state = children[currentChildIndex].Evaluate();
+
             // 자식이 실행 중이거나 실패하면 그 상태를 부모에게 보고
             if (state == NodeState.RUNNING || state == NodeState.FAILURE)
                 return state;

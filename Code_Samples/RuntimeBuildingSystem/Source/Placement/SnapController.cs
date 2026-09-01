@@ -133,7 +133,7 @@ public class SnapController : MonoBehaviour
 
         bool isDoor = materialTransform.gameObject.CompareTag(LayerAndTagConstants.Tag_Door);//문일 경우 경첩피벗에 스냅 되도록 하기 위해
         GameObject heldSnap = null;
-        Vector3 targetPosition = newPosition;
+        Vector3 targetPosition = newPosition;//초기엔 마우스 위치
         bool snapped = false;
 
         if (!bIsFree && !isSnapped && bIsSnaptime)//스냅을 해야하는 경우
@@ -156,13 +156,14 @@ public class SnapController : MonoBehaviour
         isSnapped = snapped;
         currentSnapPoint = heldSnap;
         currentPivotPoint = heldPivot ?? currentSnapPoint;
+
         UpdateSnapState(heldSnap);//스냅 상태 업데이트
 
         Transform offsetAnchor = heldSnap != null
-            ? heldSnap.transform : currentPivotPoint != null ? currentPivotPoint.transform : null;//스냅 된게 없으면 피벗에서 위치 가져옴
+            ? heldSnap.transform : currentPivotPoint != null ? currentPivotPoint.transform : null;//스냅 된게 없으면 피벗(닿은 면의 중심)에서 위치 가져옴
 
         return offsetAnchor != null
-            ? AdjustPositionByLocalOffset(materialTransform, offsetAnchor, targetPosition) : newPosition;//스냅이나 피벗이 아닌 실제 이동 점을 타겟 위치로 맞추도록 보정 
+            ? AdjustPositionByLocalOffset(materialTransform, offsetAnchor, targetPosition) : newPosition;//스냅이나 피벗이 아닌 실제 이동 점을 타겟 위치로 맞추도록 보정하여 반환
     }
 
     public Vector3 AdjustMaterialWithCurSnapPoint(
@@ -177,7 +178,8 @@ public class SnapController : MonoBehaviour
             return newPosition;
         }
 
-        Vector3 targetSnapPosition = newPosition;
+        Vector3 targetSnapPosition = newPosition;//처음엔 마우스 위치
+
         if (!bIsFree)
         {
             bestWorldSnap = null;
@@ -190,6 +192,7 @@ public class SnapController : MonoBehaviour
         }
 
         UpdateSnapState(bestWorldSnap);
+
         return AdjustPositionByLocalOffset(materialObject.transform, currentSnapPoint, targetSnapPosition);//실제 자재 위치로 보정
     }
 
@@ -220,7 +223,7 @@ public class SnapController : MonoBehaviour
             materialTransform.position,
             searchRadius,
             hitColliders,
-            pivotLayerMask);//자재 기준 피벗 레이어인 애들 찾아옴
+            pivotLayerMask);//자재 기준 주변 피벗 레이어(==스냅 포인트)인 애들 찾아옴
 
         WarnIfBufferIsFull(hitCount);
 
@@ -233,12 +236,13 @@ public class SnapController : MonoBehaviour
             }
 
             GameObject worldAnchor = collider.gameObject;
+
             if (worldAnchor == null ||
                 worldAnchor.transform.IsChildOf(materialTransform) ||
                 worldAnchor.CompareTag(LayerAndTagConstants.Tag_Snap))
             {
                 continue;
-            }//이동면으로 사용되는 스냅(피벗)이나 내 자식으로부터 온거는 건너뜀
+            }//이동면으로 사용되는 지점이나 내 자식으로부터 온거는 건너뜀
 
             if (isDoor)//문일 경우 경첩 피벗일 경우만 해당
             {
@@ -257,22 +261,23 @@ public class SnapController : MonoBehaviour
             for (int localIndex = 0; localIndex < localAnchors.Count; localIndex++)//현재 홀딩중인 자재를 돌며 가장 가까운 스냅포인트 저장
             {
                 GameObject localAnchor = localAnchors[localIndex];
+
                 if (localAnchor == null ||
                     localAnchor.CompareTag(LayerAndTagConstants.Tag_Snap) ||
                     (isDoor && !localAnchor.CompareTag(LayerAndTagConstants.Tag_DoorPivot)))
                 {
-                    continue;
+                    continue;//홀딩 자재의 스냅포인트가 아닐시 검사 X
                 }
 
                 float squaredDistance = (worldAnchor.transform.position - localAnchor.transform.position).sqrMagnitude;
 
                 if (squaredDistance <= snapDistanceSquared &&
-                    squaredDistance < minimumSquaredDistance)
+                    squaredDistance < minimumSquaredDistance) //가장 가까운 지점을 스냅포인트로 지정
                 {
                     minimumSquaredDistance = squaredDistance;
                     targetPosition = worldAnchor.transform.position;
-                    bestLocalSnap = localAnchor;
-                    bestWorldSnap = worldAnchor;
+                    bestLocalSnap = localAnchor;//내 자재의 스냅포인트
+                    bestWorldSnap = worldAnchor;//내가 붙을 자재의 스냅포인트
                     snapped = true;
                 }
             }
@@ -400,7 +405,8 @@ public class SnapController : MonoBehaviour
             newPosition,
             manualSearchRadius,
             hitColliders,
-            pivotLayerMask);
+            pivotLayerMask);//마우스 위치 주변에 스냅 포인트 가져오기
+
         WarnIfBufferIsFull(hitCount);
 
         for (int i = 0; i < hitCount; i++)
@@ -414,38 +420,36 @@ public class SnapController : MonoBehaviour
             }
 
             float squaredDistance = (newPosition - collider.transform.position).sqrMagnitude;
-            if (squaredDistance > snapDistanceSquared)
+
+            if (squaredDistance > snapDistanceSquared)//거리 우선
             {
                 continue;
             }
 
-            float directionMatch = Vector3.Dot(
-                currentSnapPoint.forward,
-                collider.transform.forward);
-            if (directionMatch < bestDirectionMatch)
-            {
+            //float directionMatch = Vector3.Dot(currentSnapPoint.forward, collider.transform.forward);//방향으로 체크해서 우선순위 정하는거로 확장 가능
+
+            //if (directionMatch < bestDirectionMatch)
+            //{
                 bestDirectionMatch = directionMatch;
                 bestWorldSnap = collider.gameObject;
                 bestPosition = collider.transform.position;
-            }
+            //}
         }
 
         return bestPosition;
     }
 
     private Vector3 AdjustPositionByLocalOffset(
-        Transform materialTransform,
-        Transform snapPointTransform,
-        Vector3 targetPivotPosition)//스냅포인트 지역좌표를 월드 좌표로 변환 후 보정하여 실제로 자재가 이동해야할 위치 구함
+        Transform materialTransform, Transform snapPointTransform, Vector3 targetPivotPosition)//스냅포인트 지역좌표를 월드 좌표로 변환 후 보정하여 실제로 자재가 이동해야할 위치 구함
     {
         if (materialTransform == null || snapPointTransform == null)
         {
             return targetPivotPosition;
         }
 
-        Vector3 localOffset = materialTransform.InverseTransformPoint(snapPointTransform.position);
-        Vector3 worldOffset = materialTransform.rotation * localOffset;
-        return targetPivotPosition - worldOffset;
+        Vector3 localOffset = materialTransform.InverseTransformPoint(snapPointTransform.position);//홀딩 자재를 기준 스냅 포인트 로컬 좌표 구함
+        Vector3 worldOffset = materialTransform.rotation * localOffset;//로컬좌표를 월드회전 행렬연산으로 월드 좌표로 변환
+        return targetPivotPosition - worldOffset;//목표 위치 - 스냅 포인트 오프셋 / 구해서 스냅 포인트끼리 붙은 것처럼 보이게
     }
 
     private void UpdateSnapState(GameObject targetAnchor)

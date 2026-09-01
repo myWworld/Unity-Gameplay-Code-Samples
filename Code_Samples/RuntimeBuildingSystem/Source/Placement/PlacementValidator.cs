@@ -167,7 +167,7 @@ public class PlacementValidator : MonoBehaviour//설치 가능여부 검사 기�
 
         cachedGeometryAndSupportResult =
             snapController.CanPlaceMaterial(mousePosition, materialObject) &&
-            cachedSupportValue >= integritySolver.MinimumSupportValue;
+            cachedSupportValue >= integritySolver.MinimumSupportValue;//자재의 지지력이 기준 이상이며 플레이어와 떨어진 위치가 기준 이하인지 체크
     }
 
     private bool CheckMaterialRequirements(IMaterial material, bool notifyIfMissing)

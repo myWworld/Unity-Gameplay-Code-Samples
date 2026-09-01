@@ -215,13 +215,10 @@ public class StructuralIntegritySolver : MonoBehaviour //지지력 관련 계산
             }
         }
 
-        foreach (IMaterial material in cluster)//모두 0으로 지지력 초기화
+        foreach (IMaterial material in cluster)//모두 0으로 지지력 초기화 및 땅에 있는 자재는 기반 지지력 부여 큐에 넣음
         {
             material.SupportValue = 0f;
-        }
 
-        foreach (IMaterial material in cluster)//땅에 있는 자재를 시작점으로 다중 시작점
-        {
             if (manager.IsTouchingGround(material.GetGameObject()))
             {
                 material.SupportValue = baseSupportValue;
@@ -309,6 +306,7 @@ public class StructuralIntegritySolver : MonoBehaviour //지지력 관련 계산
                 connectionRadius,
                 hitColliders,
                 buildingLayerMask);
+
             WarnIfQueryBufferIsFull(hitCount);
 
             for (int hitIndex = 0; hitIndex < hitCount; hitIndex++)
@@ -381,7 +379,7 @@ public class StructuralIntegritySolver : MonoBehaviour //지지력 관련 계산
             {
                 IMaterial next = currentNeighbors[i];
                 if (!IsValidMaterial(next) ||
-                    offeredSupport <= next.SupportValue + propagationEpsilon)
+                    offeredSupport <= next.SupportValue + propagationEpsilon)//다음 지지력이 현재 지지력보다 낮으면 탐색 X
                 {
                     continue;
                 }
@@ -516,7 +514,7 @@ public class StructuralIntegritySolver : MonoBehaviour //지지력 관련 계산
         }
     }
 
-    private void WarnIfQueryBufferIsFull(int hitCount)
+    private void WarnIfQueryBufferIsFull(int hitCount)//배정된 크기보다 큰지
     {
         if (!hasLoggedQueryCapacityWarning &&
             hitColliders != null &&

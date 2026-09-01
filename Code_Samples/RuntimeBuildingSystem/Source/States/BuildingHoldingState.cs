@@ -13,33 +13,33 @@ public class BuildingHoldingState : IBuildingState
             return;
         }
 
-        if (input.WasSecondaryActionPressed)
+        if (input.WasSecondaryActionPressed)//철거모드 진입
         {
             context.ChangeState(context.RemoveState);
             return;
         }
 
         if (context.curBuildingMode == BuildingSystem.eBuildingMode.ManualSnap &&
-            input.WasCycleSnapPointPressed)
+            input.WasCycleSnapPointPressed)//스냅 포인트 교체
         {
             context.ChangeSnapPoint(1);
         }
 
         if (input.WasToggleSnapModePressed)
         {
-            context.ToggleSnapMode();
+            context.ToggleSnapMode();//스냅모드 변환
         }
 
-        context.PosUpdate();
-        context.MakeRotate();
+        context.PosUpdate();//위치
+        context.MakeRotate();//회전 업데이트
 
-        if (!context.IsPossibleToPlace() || !input.WasPlacePressed)
+        if (!context.IsPossibleToPlace() || !input.WasPlacePressed)//배치 검증 + 클릭 여부
         {
             return;
         }
 
-        context.PlaceMaterial();
-        if (!context.IsHoldingMaterial())
+        context.PlaceMaterial();//배치
+        if (!context.IsHoldingMaterial())//자재 없다면 Idle 상태로
         {
             context.ChangeState(context.IdleState);
         }

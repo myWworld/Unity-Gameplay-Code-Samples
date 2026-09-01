@@ -368,6 +368,7 @@ public class PlayerInventoryAdapter : MonoBehaviour, IInventoryAdapter
         {
             PlayerInventoryStore[] stores =
                 FindObjectsByType<PlayerInventoryStore>(FindObjectsInactive.Include, FindObjectsSortMode.InstanceID);
+
             unifiedInventoryStore = ResolveBestStore(stores, preferredRoot: null);
         }
     }
@@ -450,6 +451,7 @@ public class PlayerInventoryAdapter : MonoBehaviour, IInventoryAdapter
     {
         Transform candidateTransform = candidate.transform;
         int score = preferredRoot != null && candidateTransform.root == preferredRoot ? 1000 : 0;
+
         if (string.Equals(candidateTransform.name, "Player", StringComparison.Ordinal))
         {
             score += 500;
