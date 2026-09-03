@@ -1,73 +1,90 @@
 # Dependency Map
 
-이 저장소는 전체 Unity 프로젝트가 아니라 선별 소스 스냅샷이므로, 공개 코드의 참조 대상 중 일부는 포함되지 않습니다. 아래 목록은 검토자가 어떤 코드가 외부 경계에 있는지 빠르게 파악하기 위한 것입니다.
+[← 문서 목록](./README.md) · [저장소 홈](../README.md) · [시스템 목록](../Code_Samples/README.md) · [Review Guide](./REVIEW_GUIDE.md) · [Architecture](./ARCHITECTURE.md)
 
-## Unity 기능 및 패키지
+이 저장소는 전체 Unity Project가 아니라 선별 Source Snapshot이므로, 공개 코드의 참조 대상 중 일부는 포함되지 않습니다. 아래 목록은 검토자가 Compile 경계와 외부 책임을 빠르게 파악하기 위한 것입니다.
 
-| 의존성 | 사용 위치 | 목적 | 저장소 포함 여부 |
+## Unity 기능 및 Package
+
+| 의존성 | 사용 위치 | 목적 | 공개본 |
 |---|---|---|---|
-| UnityEngine | 전체 | MonoBehaviour, Transform, Physics, Coroutine, ScriptableObject | 엔진 API만 참조 |
-| Unity AI / NavMesh | 건축, AI Action | 이동 Agent와 부분 NavMesh 갱신 연동 | 프로젝트/패키지 미포함 |
-| Universal Render Pipeline | 건축 | `DecalProjector` 기반 범위 표시 | 패키지 미포함 |
-| Unity Editor API | Boss hit detection | 커스텀 Inspector | `#if UNITY_EDITOR` 코드만 포함 |
+| UnityEngine | 전체 | MonoBehaviour, Transform, Physics, Coroutine, ScriptableObject | Engine API 참조 |
+| Unity AI / NavMesh | Building, AI Action | 이동 Agent, 착지 위치 검사, 부분 NavMesh 갱신 | Project/Package 미포함 |
+| Universal Render Pipeline | Building | `DecalProjector` 기반 범위 표시 | Package 미포함 |
+| Unity Editor API | Boss Hit Detection | Custom Inspector | `#if UNITY_EDITOR` 코드 포함 |
 
-정확한 Unity Editor 버전과 `Packages/manifest.json`은 전체 프로젝트 정보에 해당하므로 공개본에 포함하지 않았습니다.
+정확한 Unity Editor Version, `Packages/manifest.json`, Scene과 Prefab 구성은 전체 Project 정보에 해당하므로 공개본에 포함하지 않았습니다.
 
-## 외부 또는 라이선스 패키지
+## 외부 또는 License Package
 
-| 패키지/Namespace | 공개 코드에서의 역할 | 비고 |
+| Package / Namespace | 공개 코드에서의 역할 | 비고 |
 |---|---|---|
-| Malbers Animations | 캐릭터/보스 Controller, Mode, Stat, Event, Inventory, 공격 Trigger | 패키지 소스와 에셋은 재배포하지 않음 |
-| KWS | 수면 높이와 수면 배치 판정 | 패키지 미포함 |
-| PixPlays Elemental VFX | 독 투사체 VFX 실행 | 패키지 미포함 |
-| FS_CombatSystem | 잡기/전투 연동 | 패키지 또는 프로젝트 모듈 미포함 |
+| Malbers Animations | Character/Boss Controller, Mode, Stat, Event, Inventory, Attack Trigger | Package Source와 Asset 재배포 제외 |
+| KWS | 수면 높이와 수면 배치 판정 | Package 미포함 |
+| PixPlays Elemental VFX | 독 Projectile과 Effect 실행 | Package 미포함 |
+| FS_CombatSystem | Grab과 Combat 연동 | Package/Project Module 미포함 |
 
-패키지명과 상표는 의존성 식별 목적으로만 기재했으며 각 권리는 원 소유자에게 있습니다.
+Package명과 상표는 의존성 식별 목적으로만 기재했습니다.
 
 ## 프로젝트 전용 의존성
 
-다음은 공개 소스가 참조하지만 원본 게임 프로젝트에 남아 있는 대표 타입입니다. 목록은 역할 이해를 위한 것이며 완전한 API 명세가 아닙니다.
-
 ### Runtime Building System
 
-- `BuildingMaterialManagement`: 자재 Object Pool, Collider/Layer 활성화, 지면 접촉 검사, 파괴 처리
-- `BuildingColliderUtility`: Proxy Collider에서 실제 `IMaterial` Root 탐색
-- `PartialNavMeshBuilder`: 설치 위치 주변 NavMesh의 국소 갱신
-- `RuntimePlacedBuildingMarker`: 런타임 설치 오브젝트 표시
-- `RuntimeCursorController`: 건축 상태별 Cursor 표시 요청 관리
+[시스템 README](../Code_Samples/RuntimeBuildingSystem/README.md)
+
+- `BuildingMaterialManagement`: Material Object Pool, Collider/Layer 활성화, Ground 검사, 파괴 처리
+- `BuildingColliderUtility`: Proxy Collider에서 실제 `IMaterial` Root 해석
+- `PartialNavMeshBuilder`: 배치·철거 위치 주변 NavMesh 국소 갱신
+- `RuntimePlacedBuildingMarker`: Runtime 설치 Object 식별
+- `RuntimeCursorController`: 건축 상태별 Cursor 표시 요청
 - `LayerAndTagConstants`: Building/Highlight/Snap Layer와 Tag 상수
-- `Mouse3D`, `PlayerBuildingController`: 월드 마우스 좌표와 입력 Routing
-- `UIManager`: 인벤토리 열림 상태와 건축 UI 연동
-- `Door`, `Boat`: 자재별 특수 배치 처리
-- `ItemDurabilityUtility`, `ItemDurabilityReason`: 건축 도구 내구도 소모
-- `PlayerInventoryStore`, `ItemDatabase`, `PlayerUnifiedInventoryController`, `PlayerBuildingCatalogSettings`: 통합 인벤토리 계층
+- `Mouse3D`, `PlayerBuildingController`: World Mouse와 외부 Input Routing
+- `UIManager`: Inventory 열림 상태와 Building UI 연동
+- `Door`, `Boat`: Material별 특수 배치
+- `ItemDurabilityUtility`: 건축 Tool 내구도
+- Project Inventory Store와 Item Database
 
 ### Behavior Tree + Utility AI
 
-- `BossMotor`: Blackboard에서 참조하는 보스 이동/행동 제어기
+[시스템 README](../Code_Samples/BehaviorTreeUtilityAI/README.md)
+
+- `BossMotor`: 이동과 행동 요청을 처리하는 Project Controller
 - `ActionPlayMode`: Malbers Mode 실행을 공통 처리하는 Action Base
-- `ActionAttackData`, `ActionJumpAttackData`, `ActionMoveData`: 행동별 ScriptableObject 데이터
-- 거리·HP·Cooldown 등 구체 `WeightScorer` 구현: 공개본에는 Composite 계약과 조합기만 포함
+- 행동별 ScriptableObject Data 일부
+- 거리·HP·Cooldown 등 Project 전용 Scorer
+- Boss Blackboard Sensor와 실제 Tree Asset
 
 ### Boss Combat Framework
 
-- `PhaseManager`: 공통 보스 Phase 전환 기반 클래스
-- `BossSkill`, `TentacleSkillBase`: 스킬 취소·초기화·공통 참조 기반 클래스
-- `BossAnimEventBridge`, `YeogChunAnimEvent`: Animation Event와 Gameplay Skill 연결
-- `TenTacleManager`: 일반/잡기 촉수 Pool과 활성 목록 관리
-- `AutonomousTentacle`: 촉수 개별 AI 상태
-- `EffectManager`, `AdvancedProjectileVFX`, `VfxData`: VFX Pool 및 투사체 실행
-- `GrabManager`: 잡기 대상 보관·해제·던지기 연동
-- `BossAttackUtility`: 지면 탐색, 무작위 선택, 범위 피해 유틸리티
+[시스템 README](../Code_Samples/BossCombatFramework/README.md)
 
-## 컴파일에 대한 의미
+- `PhaseManager`: 공통 Boss Phase 기반
+- `BossSkill`, `TentacleSkillBase`: Skill Init/Cancel과 공통 참조
+- `BossAnimEventBridge`, `YeogChunAnimEvent`: Animation Event와 Skill 연결
+- `TenTacleManager`: Normal/Grab Tentacle Pool과 활성 목록
+- `AutonomousTentacle`: 촉수 개별 AI
+- `EffectManager`, Projectile VFX Data
+- `BossAttackUtility`: Ground 탐색과 범위 Damage
+- 실제 Boss Prefab, Animator Controller, Stat/Mode Asset
 
-위 의존성이 없기 때문에 공개본만으로의 컴파일 실패는 예상 가능한 상태입니다. 이 저장소에서 검토해야 하는 대상은 다음과 같습니다.
+## 공개본만으로 Compile되지 않는 이유
+
+공개본에는 다음이 포함되지 않습니다.
+
+- 외부 Package Assembly와 Asset
+- Scene/Prefab/Animator/ScriptableObject Asset
+- Project 전용 Manager와 Integration Module
+- 일부 Base Class와 Data Type
+
+따라서 공개본의 Compile 실패 가능성은 Snapshot 범위상 예상되는 결과입니다. 검토 대상은 다음입니다.
 
 - 클래스 간 책임과 호출 방향
-- 그래프/Queue/HashSet 기반 알고리즘
-- 상태 및 수명주기 처리
-- 외부 시스템을 직접 퍼뜨리지 않고 Adapter/Base/Manager 경계로 연결한 방식
-- NonAlloc 물리 쿼리와 버퍼 재사용 같은 성능 선택
+- State/Node/Skill/Pool Lifecycle
+- Graph·Queue·HashSet 알고리즘
+- Preview Query와 실제 Commit의 분리
+- Adapter/Base/Manager 경계
+- NonAlloc Physics Query와 Buffer 재사용
 
-실행 가능한 전체 프로젝트나 외부 패키지 전달은 이 저장소의 공개 범위에 포함되지 않습니다.
+실행 가능한 전체 Project나 유료 Package 전달은 공개 범위에 포함되지 않습니다.
+
+[← 문서 목록](./README.md)

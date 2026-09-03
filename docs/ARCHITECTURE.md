@@ -1,159 +1,223 @@
 # Architecture Notes
 
+[← 문서 목록](./README.md) · [저장소 홈](../README.md) · [시스템 목록](../Code_Samples/README.md) · [Review Guide](./REVIEW_GUIDE.md) · [Dependencies](./DEPENDENCIES.md)
+
 ## 1. Runtime Building System
+
+[시스템 README](../Code_Samples/RuntimeBuildingSystem/README.md) · [Source Map](../Code_Samples/RuntimeBuildingSystem/Source/README.md)
 
 ### 책임 분리
 
 ```mermaid
-flowchart LR
-    Input[BuildingInputHandler] --> Orchestrator[BuildingSystem]
-    Orchestrator --> State[IBuildingState implementations]
-    State --> Snap[SnapController]
-    State --> Validate[PlacementValidator]
-    Validate --> Inventory[PlayerInventoryAdapter]
-    Validate --> Predict[StructuralIntegritySolver<br/>PredictSupportValue]
-    Orchestrator --> Commit[BuildOrRemove]
-    Commit --> PrivateManager[BuildingMaterialManagement<br/>project-private]
-    Orchestrator --> GraphUpdate[StructuralIntegritySolver<br/>UpdateParentsAndChildren]
-    GraphUpdate <--> MaterialGraph[IMaterial parent-child graph]
-    Commit --> NavMesh[PartialNavMeshBuilder<br/>project-private]
+flowchart TD
+    External["PlayerBuildingController / Building UI"] --> System["BuildingSystem<br/>Facade / Orchestrator"]
+    System --> States["Idle / Holding / Remove State"]
+
+    System --> Preview["BuildingPreviewController"]
+    System --> Placement["BuildingPlacementService"]
+    System --> Removal["BuildingRemovalService"]
+
+    Preview --> Input["BuildingInputHandler"]
+    Preview --> Snap["SnapController"]
+    Preview --> MaterialManager["BuildingMaterialManagement<br/>project-private"]
+
+    Placement --> Validator["PlacementValidator"]
+    Placement --> Solver["StructuralIntegritySolver"]
+    Placement --> Inventory["PlayerInventoryAdapter"]
+    Placement --> World["BuildOrRemove"]
+
+    Removal --> Input
+    Removal --> Validator
+    Removal --> World
+
+    World --> Solver
+    World --> MaterialManager
+    World --> NavMesh["PartialNavMeshBuilder<br/>project-private"]
 ```
 
-`BuildingSystem`은 현재 건축 상태, 선택한 자재, 입력, 스냅 모드, 검증, 실제 설치/철거를 조정합니다. 개별 계산은 전용 컴포넌트로 위임합니다.
+`BuildingSystem`은 상태와 외부 API를 보유하지만 Preview 계산·배치 Transaction·철거 실행을 직접 구현하지 않습니다. `BuildingPreviewController`, `BuildingPlacementService`, `BuildingRemovalService`는 `BuildingSystem`이 생성해 사용하는 일반 C# Runtime Object입니다.
 
-### 프리뷰와 Commit 분리
+### Preview Query와 Commit
 
 ```mermaid
 sequenceDiagram
-    participant Input as InputHandler
-    participant System as BuildingSystem
-    participant Snap as SnapController
+    participant State as HoldingState
+    participant Preview as PreviewController
     participant Validator as PlacementValidator
-    participant Solver as StructuralIntegritySolver
-    participant Commit as BuildOrRemove
+    participant Solver as IntegritySolver
+    participant Service as PlacementService
+    participant Inventory as InventoryAdapter
+    participant World as BuildOrRemove
 
-    Input->>System: Mouse position / hit / rotation
-    System->>Snap: Calculate preview pose
-    Snap-->>System: Snapped or free position
-    System->>Validator: Validate preview
-    Validator->>Solver: Predict support without graph mutation
-    Solver-->>Validator: Predicted support
-    Validator-->>System: Placeable + preview color
-    Note over System,Solver: Preview phase does not commit graph links
-    System->>Solver: Update parent-child links after click
-    System->>Commit: Activate collider/layer and finalize placement
+    State->>Preview: 위치·회전·Snap 갱신
+    State->>Validator: CanPlace
+    Validator->>Solver: PredictSupportValue
+    Solver-->>Validator: Predicted Support
+    Validator-->>State: Placeable + Highlight
+
+    Note over State,Solver: Preview 단계는 Graph·Inventory·World를 변경하지 않음
+
+    State->>Service: TryCommit
+    Service->>Validator: 최종 자원 재검증
+    Service->>Solver: Parent/Child Link 생성
+    Service->>Inventory: Consume
+    alt 실패
+        Service->>Solver: Graph Rollback
+    else 성공
+        Service->>Solver: Support 확정·전파
+        Service->>World: 실제 배치
+    end
 ```
 
-프리뷰 과정에서 실제 `Parents`/`ConnectedChildren` 목록을 수정하지 않습니다. 설치 클릭 후에만 연결 관계를 만들고 예측 결과를 확정합니다. 이 구분은 프리뷰 이동 중 그래프가 오염되거나, 철거·재계산 대상이 잘못 확장되는 문제를 줄입니다.
+### 구조 안정성
 
-### 구조 안정성 모델
+각 `IMaterial`은 `Parents`, `ConnectedChildren`, `SupportValue`, Material Type, Anchor와 GameObject 참조를 제공합니다.
 
-각 `IMaterial`은 다음 정보를 가집니다.
+```text
+철거 전
+SupportValue = 현재 Graph의 유효한 경로에서 전달된 최대값
 
-- `Parents`와 `ConnectedChildren`
-- 현재 `SupportValue`
-- 자재별 `MaxSupportWeight`
-- 지면 접촉 여부
-- 연결을 검색할 Anchor 목록
+철거 후
+1. Target Link 제거
+2. Target 주변의 연결 Component 수집
+3. Cluster SupportValue 초기화
+4. Ground 접촉 Node를 Multi-source Seed로 등록
+5. 더 높은 Support만 이웃에 전파
+6. MinimumSupport 미달 Node를 Collapse Queue로 이동
+```
 
-설치 시 지면 접촉 자재 또는 기존 이웃의 지지력에서 시작해 BFS로 값을 전파합니다. 전파값은 **현재 노드의 지지력 × 자재 종류별 감쇠율**이며, 기존 값보다 큰 경우에만 이웃을 다시 Queue에 넣습니다. 따라서 여러 경로 중 가장 강한 지지 경로가 남습니다.
+이 방식은 저장된 Support의 출처 경로를 추적하지 않더라도 구조 변경 후 현재 Graph에 맞는 값을 다시 계산합니다.
 
-철거 시에는 제거 대상 주변의 연결 컴포넌트만 수집합니다. 해당 클러스터의 값을 0으로 초기화한 뒤 지면 접촉 노드를 시작점으로 다시 BFS를 수행하고, 최소 지지력보다 낮은 자재를 지연 붕괴 Queue에 넣습니다. 공개 스냅샷의 기본 최소값은 `0.25f`이며 감쇠율은 기둥·암석·경사 기둥·일반 자재별로 조정됩니다.
+---
 
-### 성능 관련 선택
+## 2. Behavior Tree + Utility AI
 
-- `Physics.OverlapSphereNonAlloc`, `SphereCastNonAlloc`, `OverlapCapsuleNonAlloc` 사용
-- 반복 호출되는 `Queue`, `List`, `HashSet`, Collider 배열 재사용
-- 철거 시 전체 월드를 순회하지 않고 영향받는 연결 클러스터만 재계산
-- 배치 검증 결과를 Pivot 위치·회전·모드 기준으로 캐시
-- 판정 Root는 즉시 목표 위치로 이동시키고 Visual 자식만 보간
+[시스템 README](../Code_Samples/BehaviorTreeUtilityAI/README.md) · [Source Map](../Code_Samples/BehaviorTreeUtilityAI/Source/README.md)
 
-## 2. Custom Behavior Tree + Utility AI
-
-### 데이터와 런타임 노드
+### Data와 Runtime
 
 ```mermaid
 flowchart LR
-    SO[BTNodeData ScriptableObjects] -->|CreateNode| Runtime[Runtime Node Graph]
-    Runner[BTRunner] -->|Evaluate each frame| Root[Root Node]
-    Root --> Composite[Sequence / Selector / Reactive / Parallel]
-    Root --> Utility[UtilitySelectorNode]
-    Utility --> Scorers[WeightScorer / CompositeScorer]
-    Composite --> Actions[Move / Attack / Jump Actions]
-    Blackboard[BlackBoard] --> Composite
-    Blackboard --> Utility
-    Blackboard --> Actions
+    Sensor["Project Sensor"] --> Blackboard["BlackBoard"]
+    Data["BTNodeData<br/>ScriptableObject"] -->|"CreateNode"| Runtime["Runtime Node Graph"]
+    Runner["BTRunner"] -->|"Evaluate each frame"| Runtime
+    Runtime <--> Blackboard
+
+    Runtime --> Composite["Selector / Sequence / Reactive / Utility"]
+    Composite --> Action["Move / Attack / Jump Action"]
+    Action --> External["BossMotor / Malbers Mode<br/>external boundary"]
 ```
 
-에디터에서 구성한 `BTNodeData`가 실제 실행용 `Node` 인스턴스를 생성합니다. 데이터와 실행 상태를 분리했기 때문에 동일 데이터 구조를 유지하면서 런타임 노드의 `started`, 현재 자식, Timer 같은 상태를 개별 인스턴스가 가질 수 있습니다.
+- ScriptableObject는 Tree 정의를 보관합니다.
+- Runtime Node는 `started`, Child Index, Active Node, Timer를 보관합니다.
+- Blackboard는 Runtime Node 사이의 공유 Context입니다.
+- Action은 외부 Controller에 명령을 요청하고 중단 시 Cleanup합니다.
 
-### 공통 생명주기
+### Node Lifecycle
 
 ```text
-Evaluate()
-  ├─ first tick: OnStart()
-  ├─ every tick: OnUpdate()
-  └─ SUCCESS/FAILURE: OnStop() and reset started
+Evaluate
+├─ 처음 실행: OnStart
+├─ 매 Tick: OnUpdate
+└─ SUCCESS / FAILURE: OnStop
 
-Stop()
-  ├─ OnAbort()
-  ├─ OnStop()
-  └─ reset started
+Stop
+├─ OnAbort
+├─ OnStop
+└─ started = false
 ```
 
-명시적 Abort 경로가 있어 실행 중이던 이동 Agent, 애니메이션 Mode, Coroutine, Root Motion 배율 등을 정리할 수 있습니다.
+### Utility 선택
 
-### Stateful와 Reactive의 구분
+```text
+No Active Node
+→ 모든 Entry Score 계산
+→ 최대 Score Child 선택
+→ Evaluate
 
-- `Sequence`는 `currentChildIndex`를 유지해 실행 중인 단계부터 이어갑니다.
-- `ReactiveSequenceNode`는 매 Tick 첫 자식부터 평가하므로 앞선 조건이 바뀌면 즉시 현재 행동을 중단할 수 있습니다.
-- `Selector`는 더 높은 우선순위 자식이 실행되면 기존 `activeNode`를 `Stop()`합니다.
-- `Parallel`은 주요 자식의 결과를 따르거나 모든 자식이 종료될 때까지 Join하는 정책을 제공합니다.
+Active Node
+→ CanInterrupt가 true일 때 재평가 Timer 증가
+→ Interval 경과 후 Score 재계산
+→ 현재 Child에 inertiaBonus
+→ 더 높은 다른 Child면 Active Stop 후 교체
+```
 
-### Utility 전환 안정화
-
-`UtilitySelectorNode`는 각 행동의 점수를 계산해 최댓값을 선택합니다. 실행 중인 행동이 `CanInterrupt()`를 허용할 때만 재평가 Timer가 증가하며, 현재 행동에는 `inertiaBonus`를 더합니다. 이 방식은 상황이 조금만 변해도 행동이 매 프레임 교체되는 Thrashing을 줄이면서, 충분히 큰 점수 변화에는 반응할 수 있게 합니다.
+---
 
 ## 3. Boss Combat Framework
 
-### 연속 Sweep Hit Detection
+[시스템 README](../Code_Samples/BossCombatFramework/README.md) · [Source Map](../Code_Samples/BossCombatFramework/Source/README.md)
+
+### 행동 실행
 
 ```mermaid
 flowchart LR
-    BonePose[Base / Middle / Tip transforms] --> Samples[Segment sample positions]
-    Prev[Previous-frame positions] --> Temporal[SphereCastNonAlloc]
-    Samples --> Temporal
-    Samples --> Spatial[OverlapCapsuleNonAlloc<br/>between adjacent segments]
-    Temporal --> Resolve[ProcessSingleHit]
-    Spatial --> Resolve
-    Resolve --> Dedup[HashSet one hit per window]
-    Dedup --> Damage[Combat package damage pipeline]
+    BT["Behavior Tree Action"] --> Motor["BossMotor / Mode"]
+    Motor --> Animator["Animator"]
+    Animator --> Event["Animation Event"]
+    Event --> Skill["Boss Skill"]
+    Skill --> Sweep["Continuous Sweep"]
+    Skill --> Tentacle["Tentacle Pool"]
+    Skill --> Grab["Grab Manager"]
+    Skill --> Cleanup["Cancel / Cleanup"]
 ```
 
-한 프레임의 현재 위치에 Collider만 두면 빠른 공격이 프레임 사이를 건너뛰어 피격이 누락될 수 있습니다. `BossSweepDamager`는 두 방향으로 빈 공간을 보완합니다.
-
-1. 각 세그먼트의 이전 위치에서 현재 위치까지 SphereCast해 **시간 방향의 이동 궤적**을 채웁니다.
-2. 현재 프레임의 인접 세그먼트 사이를 Capsule Overlap으로 검사해 **공격 길이 방향의 공간**을 채웁니다.
-
-공격 창이 다시 활성화될 때 `alreadyHit`를 비우며, 같은 창 안에서는 동일 Collider에 한 번만 피해를 전달합니다.
-
-### 스킬과 풀링 수명주기
+### Continuous Sweep
 
 ```mermaid
-sequenceDiagram
-    participant Anim as Animation Event
-    participant Skill as Boss Skill
-    participant Pool as Tentacle / Effect Pool
-    participant Child as TenTacleChild
-    participant Combat as Combat or VFX System
-
-    Anim->>Skill: Execute stage
-    Skill->>Pool: Spawn or activate pooled object
-    Pool->>Child: OnEnable and delayed reset
-    Child->>Child: Turn toward target
-    Child->>Combat: Activate attack mode or projectile
-    Anim->>Child: Attack finished / death event
-    Child->>Pool: Reset and return
+flowchart TD
+    Transforms["Base / Middle / Tip"] --> Samples["Segment Samples"]
+    Previous["Previous Frame Position"] --> Temporal["SphereCastNonAlloc"]
+    Samples --> Temporal
+    Samples --> Spatial["OverlapCapsuleNonAlloc"]
+    Temporal --> Filter["Owner / Tag / alreadyHit Filter"]
+    Spatial --> Filter
+    Filter --> Damage["Combat Damage Pipeline"]
 ```
 
-촉수는 재사용되므로 단순히 GameObject를 다시 활성화하는 것만으로는 충분하지 않습니다. HP, Animator, Controller State, 공격 중 플래그, Coroutine, AI Spawn 상태를 명시적으로 초기화합니다. 스킬 클래스는 Telegraph, 지연, 발사, 장착, 피해, Cleanup을 애니메이션 이벤트 단위로 나눠 연출 타이밍과 Gameplay 판정을 연결합니다.
+- SphereCast는 시간 방향 이동 궤적을 채웁니다.
+- Capsule Overlap은 공격 길이 방향 Segment 사이를 채웁니다.
+- `HashSet<Collider>`는 같은 공격 창에서 동일 Collider의 중복 처리를 막습니다.
+
+### Skill과 Pool Cleanup
+
+```text
+Animation Event
+→ Skill Execute Stage
+→ Spawn / Telegraph / Damage
+→ 정상 완료 Cleanup
+
+Phase 전환 또는 강제 취소
+→ BT Abort
+→ CancelSkill / AttackCleanUp
+→ Coroutine·Mode·생성 Object 정리
+```
+
+```text
+Tentacle OnEnable
+→ Listener 등록
+→ Delayed Reset
+
+Attack / Death
+→ ReturnToPool
+
+Tentacle OnDisable
+→ Listener 제거
+→ Coroutine 중단
+→ Busy/Spawn State 초기화
+```
+
+---
+
+## 공통 설계 기준
+
+| 기준 | 적용 사례 |
+|---|---|
+| Query와 Command를 구분 | Building Preview와 Placement Commit |
+| 파생값의 유효 범위를 정의 | Structural Support 재계산 |
+| 실행 상태의 소유자를 명확히 함 | Runtime BT Node, Boss Skill, Tentacle |
+| 중단 경로를 정상 완료와 동일하게 설계 | Node Abort, Skill Cancel, Pool Disable |
+| 반복 Query의 Allocation을 줄임 | NonAlloc Physics API와 Buffer 재사용 |
+| 외부 Package를 경계 뒤에 둠 | Inventory Adapter, Boss Base/Motor, Manager |
+
+[← 문서 목록](./README.md)
