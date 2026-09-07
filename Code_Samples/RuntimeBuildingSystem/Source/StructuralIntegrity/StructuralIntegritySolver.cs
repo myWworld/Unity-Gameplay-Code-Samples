@@ -174,7 +174,7 @@ public class StructuralIntegritySolver : MonoBehaviour //지지력 관련 계산
         IMaterial targetMaterial,
         BuildingMaterialManagement manager,
         bool isDecrease = false,
-        float minSupport = -1f)//비지력 전파
+        float minSupport = -1f)//전체적인 지지력 재전파
     {
         if (!IsValidMaterial(targetMaterial))
         {
