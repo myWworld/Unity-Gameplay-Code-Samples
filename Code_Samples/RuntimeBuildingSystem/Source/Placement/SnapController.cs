@@ -439,17 +439,19 @@ public class SnapController : MonoBehaviour
         return bestPosition;
     }
 
-    private Vector3 AdjustPositionByLocalOffset(
-        Transform materialTransform, Transform snapPointTransform, Vector3 targetPivotPosition)//스냅포인트 지역좌표를 월드 좌표로 변환 후 보정하여 실제로 자재가 이동해야할 위치 구함
+     //스냅포인트를 보정하여 실제로 자재가 이동해야할 위치 구함
+     private Vector3 AdjustPositionByLocalOffset(Transform materialTransform, Transform snapPointTransform, Vector3 targetSnapPosition)
     {
         if (materialTransform == null || snapPointTransform == null)
         {
-            return targetPivotPosition;
+            return targetSnapPosition;
         }
-
-        Vector3 localOffset = materialTransform.InverseTransformPoint(snapPointTransform.position);//홀딩 자재를 기준 스냅 포인트 로컬 좌표 구함
-        Vector3 worldOffset = materialTransform.rotation * localOffset;//로컬좌표의 월드 기준 회전 반영
-        return targetPivotPosition - worldOffset;//목표 위치 - 스냅 포인트 오프셋 / 구해서 스냅 포인트끼리 붙은 것처럼 보이게
+    
+        // 피벗에서 스냅포인트까지의 월드 공간 기준 오프셋 벡터
+        Vector3 rootToSnapOffset = snapPointTransform.position - materialTransform.position;
+    
+        //목표 위치에서 오프셋 벡터를 빼서 최종 피벗(자재)의 위치를 계산
+        return targetSnapPosition - rootToSnapOffset ;
     }
 
     private void UpdateSnapState(GameObject targetAnchor)
