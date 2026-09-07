@@ -448,7 +448,7 @@ public class SnapController : MonoBehaviour
         }
 
         Vector3 localOffset = materialTransform.InverseTransformPoint(snapPointTransform.position);//홀딩 자재를 기준 스냅 포인트 로컬 좌표 구함
-        Vector3 worldOffset = materialTransform.rotation * localOffset;//로컬좌표를 월드회전 행렬연산으로 월드 좌표로 변환
+        Vector3 worldOffset = materialTransform.rotation * localOffset;//로컬좌표의 월드 기준 회전 반영
         return targetPivotPosition - worldOffset;//목표 위치 - 스냅 포인트 오프셋 / 구해서 스냅 포인트끼리 붙은 것처럼 보이게
     }
 
