@@ -126,5 +126,5 @@ public class ActionMoveNode : Node
         }
     }
 
-    public override bool CanInterrupt() => true;
+    public override bool CanInterrupt() => true; //Utility Selector에서 재평가(가로채짐)가 가능함
 }
