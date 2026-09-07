@@ -124,8 +124,7 @@ public class BuildOrRemove : MonoBehaviour
         }
 
         Vector3 offset = material.GetOffsetBetweenObjAndAnchor();
-        pivot.transform.position = newPosition;
-        materialTransform.position = newPosition + offset;
+        materialTransform.position = newPosition + offset; ///다른 기준 축이 있다면 해당 축으로 보정하여 이동
     }
 
     public void RemoveMaterial(GameObject target)
