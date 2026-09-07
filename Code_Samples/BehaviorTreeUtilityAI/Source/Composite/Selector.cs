@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-public class Selector : CompositeNode //If at least one of its children succeeds, the selector succeeds.
+public class Selector : CompositeNode //하나의 자식 노드라도 성공할 경우 성공
 {
 
     private Node activeNode;
