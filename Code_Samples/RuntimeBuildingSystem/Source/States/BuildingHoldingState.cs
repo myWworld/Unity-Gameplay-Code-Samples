@@ -30,8 +30,8 @@ public class BuildingHoldingState : IBuildingState
             context.ToggleSnapMode();//스냅모드 변환
         }
 
-        context.PosUpdate();//위치
         context.MakeRotate();//회전 업데이트
+        context.PosUpdate();//위치
 
         if (!context.IsPossibleToPlace() || !input.WasPlacePressed)//배치 검증 + 클릭 여부
         {
