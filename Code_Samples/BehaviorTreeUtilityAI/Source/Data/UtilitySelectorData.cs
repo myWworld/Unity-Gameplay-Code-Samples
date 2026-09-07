@@ -12,8 +12,8 @@ public struct UtilityChildEntry
 public class UtilitySelectorData : BTNodeData
 {
     public List<UtilityChildEntry> entries = new List<UtilityChildEntry>();
-    public float inertiaBonus = 0.3f;
-    public float reEvaluationInterval = 0.2f;
+    public float inertiaBonus = 0.3f;//현재 노드에게 줄 추가(관성)점수
+    public float reEvaluationInterval = 0.2f;//재평가 주기
 
     public override Node CreateNode(BlackBoard blackBoard)
     {
