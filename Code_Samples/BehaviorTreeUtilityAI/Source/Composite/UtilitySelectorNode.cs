@@ -68,7 +68,11 @@ public class UtilitySelectorNode : CompositeNode
 
     protected override void OnStop()
     {
-        activeNode = null;
+       if (activeNode != null)
+        {
+            activeNode.Stop();
+            activeNode = null;
+        }
     }
 
     protected override void OnAbort()
@@ -76,6 +80,7 @@ public class UtilitySelectorNode : CompositeNode
         if (activeNode != null)
         {
             activeNode.Stop();
+            activeNode = null;
         }
     }
 
