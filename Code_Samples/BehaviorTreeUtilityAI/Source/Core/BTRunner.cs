@@ -21,12 +21,6 @@ public class BTRunner : MonoBehaviour
             blackBoard = GetComponent<BlackBoard>();
         }
 
-        if (rootNode == null)
-        {
-            if (rootNodeData != null)
-                rootNode = rootNodeData.CreateNode(blackBoard);
-        }
-
         if(mAnimal == null)
         {
             mAnimal = GetComponent<MAnimal>();
@@ -35,6 +29,12 @@ public class BTRunner : MonoBehaviour
         if(mAnimalAIControl == null)
         {
             mAnimalAIControl = GetComponentInChildren<MAnimalAIControl>();
+        }
+        
+        if (rootNode == null)
+        {
+            if (rootNodeData != null)
+                rootNode = rootNodeData.CreateNode(blackBoard);
         }
     }
 
