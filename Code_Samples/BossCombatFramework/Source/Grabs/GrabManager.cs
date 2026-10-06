@@ -20,7 +20,7 @@ public class GrabManager : MonoBehaviour
     public Transform grabPivot;
 
     [Header("Offset Settings")]
-    public Vector3 positionOffset = new Vector3(0, -1f, 0); // ¿¹: YÃàÀ¸·Î 1¸¸Å­ ³»·Á¼­ ÀâÈ÷°Ô
+    public Vector3 positionOffset = new Vector3(0, -1f, 0); // ì˜ˆ: Yì¶•ìœ¼ë¡œ 1ë§Œí¼ ë‚´ë ¤ì„œ ì¡íˆê²Œ
     public Vector3 rotationOffset = Vector3.zero;
 
     public Vector3 PositionOffset
@@ -66,8 +66,10 @@ public class GrabManager : MonoBehaviour
 
             var proxy = col.gameObject.GetComponent<TriggerProxy>() ?? col.gameObject.AddComponent<TriggerProxy>();
 
-            int currentIndex = i; 
-            proxy.EnterTriggerInteraction += (root, other) => OnGrabHit(other.gameObject, currentIndex, type);
+            proxy.Index = i;
+            proxy.Type = grabHitboxes[i].grabType;
+        
+            proxy.EnterTriggerInteraction += OnGrabHitCallback;
         }
     }
 
@@ -81,6 +83,15 @@ public class GrabManager : MonoBehaviour
                // UnityEngine.Debug.Log("Grab WindowActived");
                 grabHitboxes[grabColliderIndex].collider.enabled = active;
             }
+        }
+    }
+    
+    private void OnGrabHitCallback(GameObject root, Collider other)
+    {
+        var proxy = root.GetComponent<TriggerProxy>();
+        if (proxy != null) 
+        {
+            OnGrabHit(other.gameObject, proxy.Index, proxy.Type);
         }
     }
 
@@ -144,7 +155,7 @@ public class GrabManager : MonoBehaviour
     public void ReleaseGrab()
     {
         if (!IsGrabbing) return;
-        //UnityEngine.Debug.Log("<color=magenta>[¹üÀÎ »öÃâ] ´©±º°¡ ReleaseGrabÀ» È£ÃâÇß½À´Ï´Ù!</color>\n" + StackTraceUtility.ExtractStackTrace());
+        //UnityEngine.Debug.Log("<color=magenta>[ë²”ì¸ ìƒ‰ì¶œ] ëˆ„êµ°ê°€ ReleaseGrabì„ í˜¸ì¶œí–ˆìŠµë‹ˆë‹¤!</color>\n" + StackTraceUtility.ExtractStackTrace());
         IsGrabbing = false;
 
         if (currentTarget != null)
@@ -155,4 +166,15 @@ public class GrabManager : MonoBehaviour
 
         OnGrabReleased?.Invoke();
     }
+
+    private void OnDestroy()
+    {
+       for (int i = 0; i < grabHitboxes.Count; i++)
+        {
+            var proxy = grabHitboxes[i].collider?.GetComponent<TriggerProxy>();
+            if (proxy != null)
+                proxy.EnterTriggerInteraction -= OnGrabHitCallback;
+        }
+    }
+
 }
