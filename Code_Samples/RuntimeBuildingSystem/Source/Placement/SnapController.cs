@@ -426,11 +426,12 @@ public class SnapController : MonoBehaviour
                 continue;
             }
 
-            //float directionMatch = Vector3.Dot(currentSnapPoint.forward, collider.transform.forward);//방향으로 체크해서 우선순위 정하는거로 확장 가능
+            //float directionMatch = Vector3.Dot(currentSnapPoint.forward, collider.transform.forward);//방향으로 체크
 
             //if (directionMatch < bestDirectionMatch)
             //{
-                bestDirectionMatch = directionMatch;
+               // bestDirectionMatch = directionMatch;
+                snapDistanceSquared = squaredDistance;
                 bestWorldSnap = collider.gameObject;
                 bestPosition = collider.transform.position;
             //}
