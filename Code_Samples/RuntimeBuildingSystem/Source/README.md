@@ -69,7 +69,6 @@ States/BuildingRemoveState.cs
 | 파일 | 역할 |
 |---|---|
 | [`Inventory/IInventoryAdapter.cs`](./Inventory/IInventoryAdapter.cs) | 요구 자원 Query·Consume 계약 |
-| [`Inventory/PlayerInventoryAdapter.cs`](./Inventory/PlayerInventoryAdapter.cs) | Project Inventory와 건축 System 사이 Adapter |
 
 ### Data
 
