@@ -8,7 +8,6 @@ public class SelectorData : BTNodeData
 
     public override Node CreateNode(BlackBoard blackBoard)
     {
-        name = nodeName;
         List<Node> nodes = new List<Node>();
 
         foreach (var childData in childrenData)
