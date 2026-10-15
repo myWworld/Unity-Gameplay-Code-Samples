@@ -414,7 +414,8 @@ public class SnapController : MonoBehaviour
             Collider collider = hitColliders[i];
             if (collider == null ||
                 collider.gameObject == currentSnapPoint.gameObject ||
-                (previewRoot != null && collider.transform.IsChildOf(previewRoot)))
+                (previewRoot != null && collider.transform.IsChildOf(previewRoot))
+                 || collider.gameObject.CompareTag(LayerAndTagConstants.Tag_Snap))
             {
                 continue;
             }
