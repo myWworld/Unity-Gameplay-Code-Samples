@@ -499,19 +499,16 @@ public sealed class BuildingPreviewController
             if (mode == BuildingSystem.eBuildingMode.Snap)
             {
                 setBuildingMode(BuildingSystem.eBuildingMode.SnapFree);
-                snapController.ClearSnapState();
-                currentSnapPoint = null;
-                currentPivotPoint = null;
-                ClearSnappedTargetCache();
             }
             else if (mode == BuildingSystem.eBuildingMode.ManualSnap)
             {
                 setBuildingMode(BuildingSystem.eBuildingMode.ManualSnapFree);
+            }
+
                 snapController.ClearSnapState();
                 currentSnapPoint = null;
                 currentPivotPoint = null;
                 ClearSnappedTargetCache();
-            }
 
             return;
         }
